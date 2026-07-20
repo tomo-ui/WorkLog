@@ -8,6 +8,7 @@
 <meta name="apple-mobile-web-app-title" content="WorkLog">
 <meta name="theme-color" content="#007AFF">
 <link rel="manifest" id="pwa-manifest">
+<script src="https://unpkg.com/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
 <title>WorkLog</title>
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
@@ -337,14 +338,71 @@ input[type="number"]::-webkit-outer-spin-button{-webkit-appearance:none}
 /* ── MISC ── */
 .divider{height:1px;background:var(--sep)}
 .mt8{margin-top:8px}
+/* ── PDF PREVIEW ── */
+.pdf-preview-wrap{
+  background:var(--bg-card);border-radius:16px;margin:0 16px 12px;
+  overflow:hidden;box-shadow:0 4px 24px rgba(0,0,0,.12);
+}
+.pdf-hdr{
+  background:linear-gradient(135deg,#0f2864 0%,#1941aa 100%);
+  padding:20px 18px;display:flex;justify-content:space-between;align-items:flex-start;gap:12px;
+}
+.pdf-hdr-left{flex:1;min-width:0}
+.pdf-hdr-tag{font-size:9px;font-weight:700;color:rgba(160,190,255,.9);
+  letter-spacing:1.2px;text-transform:uppercase;margin-bottom:6px}
+.pdf-hdr-month{font-size:20px;font-weight:800;color:#fff;letter-spacing:-.3px;margin-bottom:3px}
+.pdf-hdr-cnt{font-size:12px;color:rgba(190,210,255,.85)}
+.pdf-hdr-right{text-align:right;flex-shrink:0}
+.pdf-hdr-earn{font-size:22px;font-weight:800;color:#fff;letter-spacing:-.5px;margin-bottom:3px}
+.pdf-hdr-sub{font-size:11px;color:rgba(190,210,255,.85);margin-bottom:2px}
+.pdf-hdr-date{font-size:10px;color:rgba(160,185,255,.65)}
+.pdf-thead{
+  display:grid;grid-template-columns:82px 46px 54px 54px 52px 1fr 72px;
+  background:#1434a4;gap:0;
+}
+.pdf-thead .pdf-cell{
+  font-size:9.5px;font-weight:700;color:#fff;padding:7px 5px;
+}
+.pdf-row{
+  display:grid;grid-template-columns:82px 46px 54px 54px 52px 1fr 72px;
+  border-bottom:1px solid var(--sep);
+}
+.pdf-row-alt{background:rgba(0,100,255,.04)}
+@media(prefers-color-scheme:dark){.pdf-row-alt{background:rgba(100,140,255,.07)}}
+.pdf-cell{font-size:9.5px;color:var(--text2);padding:7px 5px;word-break:break-word}
+.pdf-bold{font-weight:700;color:var(--blue)!important}
+.pdf-money{font-weight:700;color:var(--green)!important}
+.pdf-loc{color:var(--indigo)!important;font-size:9px}
+.pdf-sumbox{
+  background:linear-gradient(135deg,rgba(240,245,255,.9),rgba(248,252,255,.9));
+  border-top:2px solid rgba(20,52,164,.2);padding:18px;
+}
+@media(prefers-color-scheme:dark){
+  .pdf-sumbox{background:rgba(30,50,100,.25);border-top-color:rgba(80,120,240,.3)}
+}
+.pdf-sumbox-row{display:flex;align-items:center;justify-content:space-between;padding:5px 0}
+.pdf-sumbox-divider{height:1px;background:var(--sep);margin:2px 0}
+.pdf-sumbox-lbl{font-size:14px;color:var(--text2)}
+.pdf-sumbox-val{font-size:15px;font-weight:700;color:var(--text)}
+.pdf-sumbox-val-b{font-size:15px;font-weight:700;color:var(--blue)}
+.pdf-sumbox-val-g{font-size:18px;font-weight:800;color:var(--green)}
+/* ── SHARE BUTTONS in sheet ── */
+.share-btns{display:flex;flex-direction:column;gap:10px;margin-bottom:12px}
+.share-big-btn{
+  display:flex;align-items:center;gap:14px;
+  background:var(--bg-card);border-radius:14px;padding:14px 16px;
+  text-align:left;transition:opacity .12s,transform .1s;
+  box-shadow:0 1px 6px rgba(0,0,0,.07);
+}
+.share-big-btn:active{opacity:.7;transform:scale(.98)}
+.share-big-icon{font-size:28px;flex-shrink:0;line-height:1}
+.share-big-title{font-size:16px;font-weight:600;color:var(--text);margin-bottom:2px}
+.share-big-sub{font-size:13px;color:var(--text3)}
+/* ICON */
+.nb-icon-share-pdf svg{display:block}
 @media print{
   #app,body{background:#fff!important;height:auto!important;overflow:visible!important}
-  #navbar,#toast,#modal,.export-bar,.day-card,.cal-card,.sum-row,.checkin-widget,
-  .empty-state,.sec-hdr,.card[data-np],.info-banner{display:none!important}
-  .sp{padding:0!important}
-  .print-card{box-shadow:none!important;border-radius:0!important;margin:0!important}
-  .print-hdr{print-color-adjust:exact;-webkit-print-color-adjust:exact}
-  .pt-head{print-color-adjust:exact;-webkit-print-color-adjust:exact}
+  #navbar,#toast,#modal,.export-bar{display:none!important}
 }
 </style>
 </head>
@@ -1117,51 +1175,222 @@ function confirmDel(id,key){
   }
 }
 
-/* ════════ SCREEN: PRINT ════════ */
+/* ════════ SCREEN: PRINT / PDF ════════ */
 function renderPrint(key){
   const me=entries.filter(e=>e.date.startsWith(key)&&eMin(e)>0)
     .sort((a,b)=>a.date.localeCompare(b.date)||a.wejscie.localeCompare(b.wejscie));
   const tm=me.reduce((s,e)=>s+eMin(e),0);
   const te=me.reduce((s,e)=>s+eEarn(e),0);
+  const stawka=settings.stawka;
+  const cnt=me.length;
+  const cntTxt=cnt===1?'1 wpis':cnt<5?`${cnt} wpisy`:`${cnt} wpisów`;
 
   renderNB({back:{fn:'pop()',label:'Wstecz'},title:'Podgląd raportu',
-    right:{html:'Drukuj',fn:'window.print()',bold:true}});
+    right:{html:ICON_SHARE_PDF,fn:`sharePDF('${key}')`,bold:false}});
 
-  let rows=me.map(e=>`<div class="pt pt-row">
-    <div>${fmtShort(e.date)}</div><div>${dayShortPL(e.date)}</div>
-    <div>${e.wejscie}</div><div>${e.wyjscie}</div>
-    <div>${fmtDur(eMin(e))}</div>
-    <div>${fmtMoney(eEarn(e))}</div></div>`).join('');
+  /* In-app preview — mirrors the actual PDF layout */
+  const rows=me.map((e,i)=>`
+    <div class="pdf-row${i%2===1?' pdf-row-alt':''}">
+      <div class="pdf-cell">${fmtShort(e.date)}</div>
+      <div class="pdf-cell">${dayShortPL(e.date)}</div>
+      <div class="pdf-cell">${e.wejscie}</div>
+      <div class="pdf-cell">${e.wyjscie}</div>
+      <div class="pdf-cell pdf-bold">${fmtDur(eMin(e))}</div>
+      <div class="pdf-cell pdf-loc">${escH((e.miejscePracy||'').slice(0,16))}</div>
+      <div class="pdf-cell pdf-money">${fmtMoney(eEarn(e))}</div>
+    </div>`).join('');
 
   document.getElementById('screen').innerHTML=`
-  <div class="sp">
-    <div class="info-banner">
-      <span style="font-size:20px">ℹ️</span>
-      <p>Wciśnij <b>Drukuj</b> → wybierz <b>„Zapisz jako PDF"</b> lub wyślij do drukarki.</p>
-    </div>
-    <div class="print-card" id="printArea">
-      <div class="print-hdr">
-        <div class="print-hdr-title">Raport czasu pracy</div>
-        <div class="print-hdr-sub">${monthLabel(key)}</div>
-        <div class="print-hdr-rate">Stawka godzinowa: ${String(settings.stawka).replace('.',',')} zł/h</div>
-        <div class="print-hdr-date">Wygenerowano: ${fmtShort(today)}</div>
+  <div class="sp" style="padding-bottom:100px">
+    <!-- PDF preview card -->
+    <div class="pdf-preview-wrap" id="pdfPreview">
+      <!-- Header -->
+      <div class="pdf-hdr">
+        <div class="pdf-hdr-left">
+          <div class="pdf-hdr-tag">RAPORT CZASU PRACY</div>
+          <div class="pdf-hdr-month">${monthLabel(key)}</div>
+          <div class="pdf-hdr-cnt">${cntTxt}</div>
+        </div>
+        <div class="pdf-hdr-right">
+          <div class="pdf-hdr-earn">${fmtMoney(te)}</div>
+          <div class="pdf-hdr-sub">${fmtMin(tm)} · ${String(stawka).replace('.',',')} zł/h</div>
+          <div class="pdf-hdr-date">Wygenerowano ${fmtShort(today)}</div>
+        </div>
       </div>
-      <div class="pt pt-head">
-        <div>Data</div><div>Dzień</div><div>Wejście</div>
-        <div>Wyjście</div><div>Czas</div><div>Kwota</div>
+      <!-- Table head -->
+      <div class="pdf-thead">
+        <div class="pdf-cell">Data</div>
+        <div class="pdf-cell">Dzień</div>
+        <div class="pdf-cell">Wejście</div>
+        <div class="pdf-cell">Wyjście</div>
+        <div class="pdf-cell">Czas</div>
+        <div class="pdf-cell">Miejsce</div>
+        <div class="pdf-cell">Kwota</div>
       </div>
-      ${rows||'<div style="padding:14px 16px;color:var(--text3);font-size:14px">Brak wpisów</div>'}
-      <div class="pt pt-sum">
-        <div>RAZEM</div><div></div><div></div><div></div>
-        <div>${fmtDur(tm)}</div><div>${fmtMoney(te)}</div>
+      <!-- Rows -->
+      <div id="pdfRows">
+        ${rows||'<div style="padding:16px;text-align:center;color:#888;font-size:14px">Brak wpisów w tym miesiącu</div>'}
+      </div>
+      <!-- Summary -->
+      <div class="pdf-sumbox">
+        <div class="pdf-sumbox-row">
+          <span class="pdf-sumbox-lbl">Łączny czas pracy</span>
+          <span class="pdf-sumbox-val-b">${fmtMin(tm)}</span>
+        </div>
+        <div class="pdf-sumbox-divider"></div>
+        <div class="pdf-sumbox-row">
+          <span class="pdf-sumbox-lbl">Stawka godzinowa</span>
+          <span class="pdf-sumbox-val">${String(stawka).replace('.',',')} zł/h</span>
+        </div>
+        <div class="pdf-sumbox-divider"></div>
+        <div class="pdf-sumbox-row">
+          <span class="pdf-sumbox-lbl">Do wypłaty</span>
+          <span class="pdf-sumbox-val-g">${fmtMoney(te)}</span>
+        </div>
       </div>
     </div>
   </div>
+  <!-- Action bar -->
   <div class="export-bar">
-    <button class="export-btn" onclick="window.print()">
-      ${ICON_SHARE} Eksportuj / Drukuj PDF
+    <button class="export-btn" onclick="sharePDF('${key}')">
+      ${ICON_SHARE_PDF} Udostępnij PDF
     </button>
   </div>`;
+}
+
+/* ── PDF GENERATOR (jsPDF) ── */
+function generatePDF(key){
+  const {jsPDF}=window.jspdf;
+  const doc=new jsPDF({orientation:'portrait',unit:'mm',format:'a4'});
+  const me=entries.filter(e=>e.date.startsWith(key)&&eMin(e)>0)
+    .sort((a,b)=>a.date.localeCompare(b.date)||a.wejscie.localeCompare(b.wejscie));
+  const tm=me.reduce((s,e)=>s+eMin(e),0);
+  const te=me.reduce((s,e)=>s+eEarn(e),0);
+  const stawka=settings.stawka;
+  const PW=210, ML=14, MR=14, TW=PW-ML-MR;
+
+  /* ── HEADER BACKGROUND ── */
+  doc.setFillColor(15,40,100);
+  doc.rect(0,0,PW,52,'F');
+  doc.setFillColor(25,65,170);
+  doc.rect(0,34,PW,18,'F');
+
+  /* ── HEADER LEFT: title ── */
+  doc.setFont('helvetica','bold');
+  doc.setFontSize(9);
+  doc.setTextColor(160,190,255);
+  doc.text('RAPORT CZASU PRACY',ML,13);
+  doc.setFontSize(22);
+  doc.setTextColor(255,255,255);
+  doc.text(monthLabel(key),ML,26);
+  doc.setFont('helvetica','normal');
+  doc.setFontSize(10);
+  doc.setTextColor(190,210,255);
+  const cntTxt2=me.length===1?'1 wpis':me.length<5?`${me.length} wpisy`:`${me.length} wpisów`;
+  doc.text(cntTxt2,ML,33);
+
+  /* ── HEADER RIGHT: totals ── */
+  doc.setFont('helvetica','bold');
+  doc.setFontSize(18);
+  doc.setTextColor(255,255,255);
+  doc.text(fmtMoney(te),PW-MR,22,{align:'right'});
+  doc.setFont('helvetica','normal');
+  doc.setFontSize(9);
+  doc.setTextColor(190,210,255);
+  doc.text(`${fmtMin(tm)} · ${String(stawka).replace('.',',')} zł/h`,PW-MR,30,{align:'right'});
+  doc.text(`Wygenerowano: ${fmtShort(today)}`,PW-MR,37,{align:'right'});
+
+  /* ── TABLE ── */
+  // cols: Data(28) Dzień(18) Wejście(22) Wyjście(22) Czas(22) Miejsce(38) Kwota(26)
+  const cols=[28,18,22,22,22,38,26];
+  const hds=['Data','Dzień','Wejście','Wyjście','Czas','Miejsce','Kwota'];
+  const RH=8; let y=60;
+
+  /* table header */
+  doc.setFillColor(15,52,140);
+  doc.rect(ML,y,TW,RH,'F');
+  doc.setFont('helvetica','bold');
+  doc.setFontSize(8.5);
+  doc.setTextColor(255,255,255);
+  let cx=ML;
+  hds.forEach((h,i)=>{doc.text(h,cx+2,y+5.5);cx+=cols[i];});
+  y+=RH;
+
+  /* rows */
+  me.forEach((e,ri)=>{
+    if(y>270){doc.addPage();y=15;}
+    if(ri%2===1){doc.setFillColor(240,245,255);doc.rect(ML,y,TW,RH,'F');}
+    doc.setDrawColor(220,225,240);doc.setLineWidth(0.15);
+    doc.line(ML,y+RH,ML+TW,y+RH);
+    doc.setFont('helvetica','normal');doc.setFontSize(8.5);
+    const vals=[fmtShort(e.date),dayShortPL(e.date),e.wejscie,e.wyjscie,
+      fmtDur(eMin(e)),(e.miejscePracy||'').slice(0,18),fmtMoney(eEarn(e))];
+    cx=ML;
+    vals.forEach((v,vi)=>{
+      if(vi===4){doc.setFont('helvetica','bold');doc.setTextColor(30,60,180);}
+      else if(vi===6){doc.setFont('helvetica','bold');doc.setTextColor(22,130,60);}
+      else{doc.setFont('helvetica','normal');doc.setTextColor(30,30,40);}
+      doc.text(v,cx+2,y+5.5,{maxWidth:cols[vi]-3});
+      cx+=cols[vi];
+    });
+    y+=RH;
+  });
+
+  /* summary row */
+  y+=2;
+  doc.setFillColor(230,238,255);
+  doc.rect(ML,y,TW,RH+1,'F');
+  doc.setDrawColor(25,65,170);doc.setLineWidth(0.5);
+  doc.line(ML,y,ML+TW,y);
+  doc.setFont('helvetica','bold');doc.setFontSize(9);
+  doc.setTextColor(15,40,120);doc.text('RAZEM',ML+2,y+6);
+  cx=ML+cols[0]+cols[1]+cols[2]+cols[3];
+  doc.text(fmtDur(tm),cx+2,y+6);
+  cx=ML+cols.reduce((s,c)=>s+c,0)-cols[6];
+  doc.setTextColor(22,130,60);doc.text(fmtMoney(te),cx+2,y+6);
+  y+=RH+10;
+
+  /* summary box */
+  doc.setFillColor(248,250,255);
+  doc.roundedRect(ML,y,TW,36,3,3,'F');
+  doc.setDrawColor(200,215,240);doc.setLineWidth(0.3);
+  doc.roundedRect(ML,y,TW,36,3,3,'S');
+  doc.setFont('helvetica','bold');doc.setFontSize(11);
+  doc.setTextColor(15,40,120);doc.text('Podsumowanie miesięczne',ML+6,y+9);
+  const col2=TW/2+ML;
+  doc.setFont('helvetica','normal');doc.setFontSize(10);doc.setTextColor(80,80,100);
+  doc.text('Łączny czas pracy:',ML+6,y+20);
+  doc.setFont('helvetica','bold');doc.setTextColor(25,65,170);
+  doc.text(fmtMin(tm),ML+6+50,y+20);
+  doc.setFont('helvetica','normal');doc.setTextColor(80,80,100);
+  doc.text(`Stawka: ${String(stawka).replace('.',',')} zł/h`,ML+6,y+29);
+  doc.setFont('helvetica','bold');doc.setTextColor(22,130,60);doc.setFontSize(11);
+  doc.text(fmtMoney(te),ML+TW-4,y+29,{align:'right'});
+
+  return doc.output('blob');
+}
+
+/* ── SHARE / DOWNLOAD PDF ── */
+async function sharePDF(key){
+  showToast('Generuję PDF…');
+  await new Promise(r=>setTimeout(r,30));
+  try{
+    const blob=generatePDF(key);
+    const fname=`raport_${key}.pdf`;
+    const file=new File([blob],fname,{type:'application/pdf'});
+    if(navigator.share && navigator.canShare && navigator.canShare({files:[file]})){
+      await navigator.share({files:[file],title:`Raport ${monthLabel(key)}`});
+    } else {
+      /* fallback: download */
+      const url=URL.createObjectURL(blob);
+      const a=document.createElement('a');a.href=url;a.download=fname;
+      document.body.appendChild(a);a.click();document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      showToast('PDF pobrany ✓');
+    }
+  }catch(err){
+    if(err.name!=='AbortError') showToast('Błąd generowania PDF');
+  }
 }
 
 /* ════════ SCREEN: SETTINGS ════════ */
@@ -1349,19 +1578,28 @@ function showShareSheet(key){
   document.getElementById('msheet').innerHTML=`
     <div class="sheet-handle"></div>
     <div class="sheet-title">Eksportuj raport — ${monthLabel(key)}</div>
-    <div class="share-icons">
-      <div class="sh-item" onclick="push('print',{key:'${key}'});closeModal()">
-        <div class="sh-bubble" style="background:#fff3e0">📄</div>
-        <span class="sh-lbl">Podgląd PDF</span></div>
-      <div class="sh-item" onclick="shareCSV('${key}')">
-        <div class="sh-bubble" style="background:#e8f5e9">📊</div>
-        <span class="sh-lbl">Eksport CSV</span></div>
-      <div class="sh-item" onclick="closeModal();showToast('Otwórz Podgląd PDF → Udostępnij')">
-        <div class="sh-bubble" style="background:#e8f0fe">📧</div>
-        <span class="sh-lbl">Wyślij mailem</span></div>
-      <div class="sh-item" onclick="closeModal();window.print()">
-        <div class="sh-bubble" style="background:#fce4ec">🖨️</div>
-        <span class="sh-lbl">Drukuj</span></div>
+    <div class="share-btns">
+      <button class="share-big-btn" onclick="closeModal();sharePDF('${key}')">
+        <span class="share-big-icon">📤</span>
+        <div>
+          <div class="share-big-title">Udostępnij PDF</div>
+          <div class="share-big-sub">Mail, SMS, WhatsApp, AirDrop…</div>
+        </div>
+      </button>
+      <button class="share-big-btn" onclick="closeModal();push('print',{key:'${key}'})">
+        <span class="share-big-icon">👁️</span>
+        <div>
+          <div class="share-big-title">Podgląd raportu</div>
+          <div class="share-big-sub">Zobacz przed wysłaniem</div>
+        </div>
+      </button>
+      <button class="share-big-btn" onclick="shareCSV('${key}')">
+        <span class="share-big-icon">📊</span>
+        <div>
+          <div class="share-big-title">Eksport CSV</div>
+          <div class="share-big-sub">Do Excela lub Arkuszy Google</div>
+        </div>
+      </button>
     </div>
     <button class="sheet-cancel" onclick="closeModal()">Anuluj</button>`;
   document.getElementById('modal').classList.add('open');
@@ -1406,6 +1644,7 @@ const ICON_PLAY=`<svg width="22" height="22" viewBox="0 0 24 24" fill="none" str
 const ICON_STOP=`<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><rect x="4" y="4" width="16" height="16" rx="2" fill="white" stroke="white"/></svg>`;
 const ICON_CLOCK_SM=`<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#007AFF" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>`;
 const ICON_MONEY_SM=`<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#34C759" stroke-width="2.5"><rect x="2" y="6" width="20" height="12" rx="2"/><path d="M22 10H2"/></svg>`;
+const ICON_SHARE_PDF=`<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12v8a2 2 0 002 2h12a2 2 0 002-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" y1="2" x2="12" y2="15"/></svg>`;
 
 /* ════════ UTIL ════════ */
 function escH(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
