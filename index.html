@@ -368,22 +368,52 @@ input[type="number"]::-webkit-outer-spin-button{-webkit-appearance:none}
 })();
 
 /* ════════ STORAGE ════════ */
-const SK  = 'wl_entries_v1';   // entries (unchanged key)
-const SSK = 'wl_settings_v2';  // settings
-const PK  = 'wl_pending_v1';   // active check-in
+const LEGACY_SK  = 'wl_entries_v1';
+const LEGACY_SSK = 'wl_settings_v2';
+const LEGACY_PK  = 'wl_pending_v1';
+const PROFILES_KEY = 'wl_profiles_v1';
+const ACTIVE_PROFILE_KEY = 'wl_active_profile_v1';
+const LOGIN_SESSION_KEY = 'wl_logged_profile_v1';
+
+let activeProfileId = null;
+let profiles = [];
+const profileKey = key => `${key}_${activeProfileId}`;
 
 let entries  = [];
 let settings = {stawka:0, locations:[], lastLocation:'', defaultLocation:''};
 let pending  = null; // {date,wejscie,miejscePracy}
 
-function load(){
-  try{ entries=JSON.parse(localStorage.getItem(SK)||'[]'); }catch(e){entries=[];}
-  try{ settings={...settings,...JSON.parse(localStorage.getItem(SSK)||'{}')}; }catch(e){}
-  try{ pending=JSON.parse(localStorage.getItem(PK)||'null'); }catch(e){}
+function saveProfiles(){ localStorage.setItem(PROFILES_KEY,JSON.stringify(profiles)); }
+function readProfiles(){ try{return JSON.parse(localStorage.getItem(PROFILES_KEY)||'[]');}catch(e){return [];} }
+function hashPin(pin){
+  if(!crypto?.subtle) return Promise.resolve(btoa(`worklog:${pin}`));
+  return crypto.subtle.digest('SHA-256',new TextEncoder().encode(`worklog:${pin}`))
+    .then(buf=>Array.from(new Uint8Array(buf)).map(b=>b.toString(16).padStart(2,'0')).join(''));
 }
-function saveEntries(){ localStorage.setItem(SK,JSON.stringify(entries)); }
-function saveSettings(){ localStorage.setItem(SSK,JSON.stringify(settings)); }
-function savePending(){ localStorage.setItem(PK,JSON.stringify(pending)); }
+function load(){
+  profiles=readProfiles();
+  if(!profiles.length){
+    try{
+      const oldSettings=JSON.parse(localStorage.getItem(LEGACY_SSK)||'{}');
+      if(oldSettings._setup){
+        const id='legacy';
+        profiles=[{id,name:'Mój profil',pinHash:null,legacy:true}]; saveProfiles();
+        localStorage.setItem(ACTIVE_PROFILE_KEY,id);
+      }
+    }catch(e){}
+  }
+  activeProfileId=localStorage.getItem(ACTIVE_PROFILE_KEY);
+  if(!profiles.some(p=>p.id===activeProfileId)) activeProfileId=null;
+  if(!activeProfileId){entries=[];settings={stawka:0,locations:[],lastLocation:'',defaultLocation:''};pending=null;return;}
+  const isLegacy=profiles.find(p=>p.id===activeProfileId)?.legacy;
+  try{ entries=JSON.parse(localStorage.getItem(isLegacy?LEGACY_SK:profileKey('wl_entries_v1'))||'[]'); }catch(e){entries=[];}
+  try{ settings={...settings,...JSON.parse(localStorage.getItem(isLegacy?LEGACY_SSK:profileKey('wl_settings_v2'))||'{}')}; }catch(e){}
+  try{ pending=JSON.parse(localStorage.getItem(isLegacy?LEGACY_PK:profileKey('wl_pending_v1'))||'null'); }catch(e){}
+}
+function storageKey(key){return profiles.find(p=>p.id===activeProfileId)?.legacy?({"wl_entries_v1":LEGACY_SK,"wl_settings_v2":LEGACY_SSK,"wl_pending_v1":LEGACY_PK}[key]):profileKey(key);}
+function saveEntries(){ localStorage.setItem(storageKey('wl_entries_v1'),JSON.stringify(entries)); }
+function saveSettings(){ localStorage.setItem(storageKey('wl_settings_v2'),JSON.stringify(settings)); }
+function savePending(){ localStorage.setItem(storageKey('wl_pending_v1'),JSON.stringify(pending)); }
 
 function genId(){ return Date.now().toString(36)+Math.random().toString(36).slice(2,6); }
 function addEntry(e){ entries.push({...e,id:genId()}); saveEntries(); }
@@ -478,9 +508,21 @@ function showOnboarding(){
   document.getElementById('screen').innerHTML=`
     <div class="onb-wrap">
       <div class="onb-icon">⏱️</div>
-      <div class="onb-title">Witaj w WorkLog</div>
-      <p class="onb-sub">Zanim zaczniesz, ustaw swoją domyślną stawkę godzinową. Możesz ją zmienić w każdej chwili w Ustawieniach.</p>
+      <div class="onb-title">Nowy profil</div>
+      <p class="onb-sub">Utwórz profil i ustaw 4-cyfrowy PIN. PIN będzie potrzebny przy każdym kolejnym otwarciu aplikacji.</p>
       <div class="onb-card">
+        <div class="onb-field">
+          <span class="onb-field-label">Nazwa profilu</span>
+          <input class="onb-input onb-input-text" id="onbName" type="text" maxlength="30" placeholder="Np. Jan">
+        </div>
+        <div class="onb-field" style="border-top:1px solid var(--sep)">
+          <span class="onb-field-label">PIN</span>
+          <input class="onb-input" id="onbPin" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="4" placeholder="••••">
+        </div>
+        <div class="onb-field" style="border-top:1px solid var(--sep)">
+          <span class="onb-field-label">Powtórz PIN</span>
+          <input class="onb-input" id="onbPin2" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="4" placeholder="••••">
+        </div>
         <div class="onb-field">
           <span class="onb-field-label">Stawka godzinowa</span>
           <input class="onb-input" id="onbRate" type="number" min="1" step="0.5" value="25" placeholder="25">
@@ -491,12 +533,24 @@ function showOnboarding(){
           <input class="onb-input onb-input-text" id="onbLoc" type="text" placeholder="Np. Biuro">
         </div>
       </div>
-      <button class="onb-btn" onclick="finishOnboarding()">Zaczynamy →</button>
+      <button class="onb-btn" onclick="finishOnboarding()">Utwórz profil →</button>
     </div>`;
 }
-function finishOnboarding(){
+async function finishOnboarding(){
+  const name=(document.getElementById('onbName').value||'').trim();
+  const pin=(document.getElementById('onbPin').value||'').replace(/\D/g,'');
+  const pin2=(document.getElementById('onbPin2').value||'').replace(/\D/g,'');
+  if(!name){showToast('Podaj nazwę profilu');return;}
+  if(!/^\d{4}$/.test(pin)){showToast('PIN musi mieć dokładnie 4 cyfry');return;}
+  if(pin!==pin2){showToast('Wpisane PIN-y są różne');return;}
   const r=parseFloat(document.getElementById('onbRate').value)||25;
   const loc=(document.getElementById('onbLoc').value||'').trim();
+  activeProfileId=genId();
+  profiles.push({id:activeProfileId,name,pinHash:await hashPin(pin)});
+  saveProfiles(); localStorage.setItem(ACTIVE_PROFILE_KEY,activeProfileId);
+  sessionStorage.setItem(LOGIN_SESSION_KEY,activeProfileId);
+  entries=[]; pending=null;
+  settings={stawka:0,locations:[],lastLocation:'',defaultLocation:''};
   settings.stawka=r;
   settings.defaultLocation=loc;
   settings._setup=true;
@@ -507,6 +561,62 @@ function finishOnboarding(){
   stack=[{sc:'months',p:{}}];
   history.replaceState({idx:0},'','');
   render('months',{},'push');
+}
+
+function showLogin(){
+  document.getElementById('navbar').style.display='none';
+  document.getElementById('screen').style.overflow='visible';
+  const buttons=profiles.map(p=>`<button class="sheet-cancel" style="margin-bottom:8px" onclick="selectProfile('${p.id}')">${escH(p.name)}</button>`).join('');
+  document.getElementById('screen').innerHTML=`
+    <div class="onb-wrap">
+      <div class="onb-icon">🔒</div><div class="onb-title">Zaloguj się</div>
+      <p class="onb-sub">Wybierz profil, a następnie wpisz swój 4-cyfrowy PIN.</p>
+      <div class="onb-card" style="padding:12px">${buttons}</div>
+      <button class="onb-btn" onclick="showOnboarding()">+ Zarejestruj nowy profil</button>
+    </div>`;
+}
+function selectProfile(id){
+  const profile=profiles.find(p=>p.id===id); if(!profile)return;
+  if(!profile.pinHash){showLegacyPinSetup(id);return;}
+  document.getElementById('screen').innerHTML=`
+    <div class="onb-wrap"><div class="onb-icon">🔒</div><div class="onb-title">${escH(profile.name)}</div>
+      <p class="onb-sub">Wpisz 4-cyfrowy PIN, aby kontynuować.</p>
+      <div class="onb-card"><div class="onb-field"><span class="onb-field-label">PIN</span>
+        <input class="onb-input" id="loginPin" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="4" placeholder="••••" autofocus onkeydown="if(event.key==='Enter')loginProfile('${id}')"></div></div>
+      <button class="onb-btn" onclick="loginProfile('${id}')">Zaloguj się</button>
+      <button class="nb-btn" style="margin-top:14px" onclick="showLogin()">Wybierz inny profil</button></div>`;
+  setTimeout(()=>document.getElementById('loginPin')?.focus(),50);
+}
+function showLegacyPinSetup(id){
+  document.getElementById('screen').innerHTML=`<div class="onb-wrap"><div class="onb-icon">🔒</div>
+    <div class="onb-title">Zabezpiecz profil</div><p class="onb-sub">Ustaw nowy 4-cyfrowy PIN dla tego profilu.</p>
+    <div class="onb-card"><div class="onb-field"><span class="onb-field-label">PIN</span><input class="onb-input" id="legacyPin" type="password" inputmode="numeric" maxlength="4" placeholder="••••"></div>
+    <div class="onb-field" style="border-top:1px solid var(--sep)"><span class="onb-field-label">Powtórz PIN</span><input class="onb-input" id="legacyPin2" type="password" inputmode="numeric" maxlength="4" placeholder="••••"></div></div>
+    <button class="onb-btn" onclick="saveLegacyPin('${id}')">Zapisz PIN</button></div>`;
+}
+async function saveLegacyPin(id){
+  const pin=(document.getElementById('legacyPin').value||'').replace(/\D/g,'');
+  const pin2=(document.getElementById('legacyPin2').value||'').replace(/\D/g,'');
+  if(!/^\d{4}$/.test(pin)||pin!==pin2){showToast('Wpisz dwa takie same 4-cyfrowe PIN-y');return;}
+  const p=profiles.find(p=>p.id===id); if(!p)return;
+  p.pinHash=await hashPin(pin); saveProfiles(); selectProfile(id);
+}
+async function loginProfile(id){
+  const pin=(document.getElementById('loginPin').value||'').replace(/\D/g,'');
+  const profile=profiles.find(p=>p.id===id);
+  if(!/^\d{4}$/.test(pin)){showToast('Wpisz 4-cyfrowy PIN');return;}
+  if(!profile||await hashPin(pin)!==profile.pinHash){showToast('Nieprawidłowy PIN');return;}
+  activeProfileId=id; localStorage.setItem(ACTIVE_PROFILE_KEY,id);
+  sessionStorage.setItem(LOGIN_SESSION_KEY,id); load(); startApp();
+}
+function startApp(){
+  document.getElementById('navbar').style.display=''; document.getElementById('screen').style.overflow='';
+  stack=[{sc:'months',p:{}}]; history.replaceState({idx:0},'',''); render('months',{},'push');
+}
+function logout(){
+  if(!confirm('Wylogować z profilu?'))return;
+  sessionStorage.removeItem(LOGIN_SESSION_KEY); activeProfileId=null; entries=[]; pending=null;
+  showLogin();
 }
 
 /* ════════ CHECK-IN / CHECK-OUT ════════ */
@@ -1076,6 +1186,12 @@ function renderSettings(){
         <span style="font-size:17px;color:var(--red)">🗑️ Usuń wszystkie dane</span>
       </div>
     </div>
+    <p class="sec-hdr">Profil</p>
+    <div class="card">
+      <div class="row"><span class="form-lbl">Zalogowano jako</span><span style="color:var(--text3);font-size:16px">${escH(profiles.find(p=>p.id===activeProfileId)?.name||'')}</span></div>
+      <div class="row tap" onclick="logout()"><span style="font-size:17px;color:var(--red)">Wyloguj się</span></div>
+      <div class="row tap" onclick="showOnboarding()"><span class="form-lbl">+ Zarejestruj nowy profil</span></div>
+    </div>
     <p style="text-align:center;font-size:12px;color:var(--text3);padding:20px">WorkLog · ${entries.length} wpisów</p>
   </div>`;
 }
@@ -1211,12 +1327,12 @@ function escH(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').re
 /* ════════ INIT ════════ */
 load();
 history.replaceState({idx:0},'','');
-if(!settings._setup){
+if(!profiles.length){
   showOnboarding();
+} else if(sessionStorage.getItem(LOGIN_SESSION_KEY)===activeProfileId && activeProfileId){
+  startApp();
 } else {
-  stack=[{sc:'months',p:{}}];
-  renderNB({});
-  renderMonths();
+  showLogin();
 }
 </script>
 </body>
