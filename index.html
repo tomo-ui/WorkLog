@@ -150,8 +150,15 @@ button{cursor:pointer;border:none;background:none}
   font-size:14px;font-weight:600;display:flex;align-items:center;gap:4px;flex-shrink:0}
 .pill:active{opacity:.8;transform:scale(.96)}
 .day-sep{height:1px;background:var(--sep);margin:0 0 10px}
+.et-item{position:relative;overflow:hidden;border-radius:10px}
+.et-actions{position:absolute;top:0;right:0;bottom:0;width:72px;
+  display:flex;z-index:0}
+.et-del-btn{flex:1;background:var(--red);color:#fff;border:none;
+  font-size:14px;font-weight:600}
+.et-del-btn:active{opacity:.75}
 .et-row{display:flex;align-items:center;padding:8px 6px;border-radius:10px;
-  cursor:pointer;transition:background .1s}
+  cursor:pointer;transition:background .1s,transform .22s cubic-bezier(.22,1,.36,1);
+  position:relative;z-index:1;background:var(--bg-card);touch-action:pan-y}
 .et-row:active{background:rgba(0,0,0,.05)}
 @media(prefers-color-scheme:dark){.et-row:active{background:rgba(255,255,255,.07)}}
 .et-times{flex:1;min-width:0}
@@ -233,6 +240,7 @@ input[type="number"]::-webkit-outer-spin-button{-webkit-appearance:none}
   border:none;outline:none;text-align:right;width:80px;-moz-appearance:textfield}
 .onb-input::-webkit-inner-spin-button,.onb-input::-webkit-outer-spin-button{-webkit-appearance:none}
 .onb-unit{font-size:16px;color:var(--text3)}
+.onb-input-text{width:150px;text-align:right;font-size:17px}
 .onb-btn{width:100%;max-width:360px;background:var(--blue);color:#fff;
   border-radius:16px;padding:18px;font-size:19px;font-weight:700;
   box-shadow:0 6px 20px rgba(0,122,255,.4);transition:all .15s}
@@ -243,8 +251,9 @@ input[type="number"]::-webkit-outer-spin-button{-webkit-appearance:none}
 .print-hdr{background:linear-gradient(135deg,#1e3a8a,#2563eb);color:#fff;padding:16px}
 .print-hdr-title{font-size:18px;font-weight:700}
 .print-hdr-sub{font-size:13px;opacity:.8;margin-top:2px}
+.print-hdr-rate{font-size:12px;opacity:.9;margin-top:6px;font-weight:600}
 .print-hdr-date{font-size:10px;opacity:.55;margin-top:4px}
-.pt{display:grid;grid-template-columns:76px 52px 50px 50px 50px 58px 1fr;font-size:9.5px}
+.pt{display:grid;grid-template-columns:82px 56px 58px 58px 58px 1fr;font-size:9.5px}
 .pt-head{background:#1e40af;color:#fff;font-weight:700}
 .pt-head>div,.pt-row>div{padding:6px 5px}
 .pt-row{border-bottom:1px solid var(--sep)}
@@ -364,7 +373,7 @@ const SSK = 'wl_settings_v2';  // settings
 const PK  = 'wl_pending_v1';   // active check-in
 
 let entries  = [];
-let settings = {stawka:0, locations:[], lastLocation:''};
+let settings = {stawka:0, locations:[], lastLocation:'', defaultLocation:''};
 let pending  = null; // {date,wejscie,miejscePracy}
 
 function load(){
@@ -477,15 +486,22 @@ function showOnboarding(){
           <input class="onb-input" id="onbRate" type="number" min="1" step="0.5" value="25" placeholder="25">
           <span class="onb-unit">zł/h</span>
         </div>
+        <div class="onb-field" style="border-top:1px solid var(--sep)">
+          <span class="onb-field-label">Miejsce pracy</span>
+          <input class="onb-input onb-input-text" id="onbLoc" type="text" placeholder="Np. Biuro">
+        </div>
       </div>
       <button class="onb-btn" onclick="finishOnboarding()">Zaczynamy →</button>
     </div>`;
 }
 function finishOnboarding(){
   const r=parseFloat(document.getElementById('onbRate').value)||25;
+  const loc=(document.getElementById('onbLoc').value||'').trim();
   settings.stawka=r;
+  settings.defaultLocation=loc;
   settings._setup=true;
   saveSettings();
+  if(loc) addLocation(loc);
   document.getElementById('navbar').style.display='';
   document.getElementById('screen').style.overflow='';
   stack=[{sc:'months',p:{}}];
@@ -513,18 +529,15 @@ function updateTimerDisplay(){
 }
 
 function doCheckin(){
-  // Show location picker first
-  const locs=settings.locations;
-  const last=settings.lastLocation;
-  showLocationPicker(loc=>{
-    pending={date:nowDate(),wejscie:nowTime(),miejscePracy:loc};
-    savePending();
-    const key=pending.date.slice(0,7);
-    curMonthKey=key;
-    renderMonths();
-    showToast(`Zameldowano o ${pending.wejscie} ✓`);
-    startTimer();
-  }, last, locs);
+  // Standardowe zameldowanie: zapisuje bieżącą datę/godzinę i domyślne miejsce pracy z ustawień, bez pytania.
+  const loc=settings.defaultLocation||settings.lastLocation||'';
+  pending={date:nowDate(),wejscie:nowTime(),miejscePracy:loc};
+  savePending();
+  const key=pending.date.slice(0,7);
+  curMonthKey=key;
+  renderMonths();
+  showToast(`Zameldowano o ${pending.wejscie} ✓`);
+  startTimer();
 }
 
 function doCheckout(){
@@ -758,18 +771,24 @@ function buildDD(ds,me){
   } else {
     dayE.forEach((e,i)=>{
       const m=eMin(e);const ok=m>0;
-      rows+=`<div class="et-row" onclick="goEdit('${e.id}')">
-        <div class="et-times">
-          <div class="et-line"><div class="et-ico g">▶</div><span class="et-time">${e.wejscie}</span></div>
-          <div class="et-line"><div class="et-ico r">■</div><span class="et-time">${e.wyjscie}</span></div>
-          ${e.miejscePracy?`<div class="et-loc">📍 ${escH(e.miejscePracy)}</div>`:''}
-          ${e.notatka?`<div class="et-note">${escH(e.notatka)}</div>`:''}
-        </div>
-        <div class="et-right">
-          ${ok?`<div class="et-dur">${fmtDur(m)}</div>
-          <div class="et-earn">${fmtMoney(eEarn(e))}</div>
-          <div class="et-rate">${String(e.stawka||settings.stawka).replace('.',',')} zł/h</div>`
-          :`<span style="color:var(--orange);font-size:12px">⚠️ Błąd</span>`}
+      rows+=`<div class="et-item">
+        <div class="et-actions"><button class="et-del-btn"
+          onclick="event.stopPropagation();confirmDel('${e.id}','${ds.slice(0,7)}')">Usuń</button></div>
+        <div class="et-row" id="etr-${e.id}"
+          ontouchstart="etTouchStart(event,this)" ontouchmove="etTouchMove(event,this)" ontouchend="etTouchEnd(event,this)"
+          onclick="etRowTap('${e.id}',this)">
+          <div class="et-times">
+            <div class="et-line"><div class="et-ico g">▶</div><span class="et-time">${e.wejscie}</span></div>
+            <div class="et-line"><div class="et-ico r">■</div><span class="et-time">${e.wyjscie}</span></div>
+            ${e.miejscePracy?`<div class="et-loc">📍 ${escH(e.miejscePracy)}</div>`:''}
+            ${e.notatka?`<div class="et-note">${escH(e.notatka)}</div>`:''}
+          </div>
+          <div class="et-right">
+            ${ok?`<div class="et-dur">${fmtDur(m)}</div>
+            <div class="et-earn">${fmtMoney(eEarn(e))}</div>
+            <div class="et-rate">${String(e.stawka||settings.stawka).replace('.',',')} zł/h</div>`
+            :`<span style="color:var(--orange);font-size:12px">⚠️ Błąd</span>`}
+          </div>
         </div>
       </div>${i<dayE.length-1?'<div class="et-div"></div>':''}`;
     });
@@ -786,6 +805,49 @@ function buildDD(ds,me){
       <button class="pill" onclick="goAddForDay('${ds}')">＋ Dodaj</button>
     </div>
     <div class="day-sep"></div>${rows}</div>`;
+}
+
+/* ════════ SWIPE-TO-DELETE (widok dnia) ════════ */
+const SWIPE_OPEN=-72;
+let _swipe=null;
+function closeSwipe(el){ if(!el) return; el.style.transform=''; el.classList.remove('swiped'); }
+function closeAllSwipes(except){
+  document.querySelectorAll('.et-row.swiped').forEach(r=>{ if(r!==except) closeSwipe(r); });
+}
+function etTouchStart(ev,el){
+  closeAllSwipes(el);
+  const t=ev.touches[0];
+  _swipe={x:t.clientX,y:t.clientY,el,dragging:false,base:el.classList.contains('swiped')?SWIPE_OPEN:0};
+}
+function etTouchMove(ev,el){
+  if(!_swipe||_swipe.el!==el) return;
+  const t=ev.touches[0];
+  const dx=t.clientX-_swipe.x, dy=t.clientY-_swipe.y;
+  if(!_swipe.dragging){
+    if(Math.abs(dx)>8&&Math.abs(dx)>Math.abs(dy)) _swipe.dragging=true;
+    else if(Math.abs(dy)>8){ _swipe=null; return; }
+    else return;
+  }
+  ev.preventDefault();
+  const tx=Math.min(0,Math.max(SWIPE_OPEN,_swipe.base+dx));
+  el.style.transition='none';
+  el.style.transform=`translateX(${tx}px)`;
+}
+function etTouchEnd(ev,el){
+  if(!_swipe||_swipe.el!==el){ _swipe=null; return; }
+  el.style.transition='';
+  if(_swipe.dragging){
+    const cur=el.style.transform?parseFloat(el.style.transform.replace(/[^-\d.]/g,''))||0:0;
+    if(cur<SWIPE_OPEN/2){ el.style.transform=`translateX(${SWIPE_OPEN}px)`; el.classList.add('swiped'); }
+    else { closeSwipe(el); }
+    el.dataset.dragged='1';
+  }
+  _swipe=null;
+}
+function etRowTap(id,el){
+  if(el.dataset.dragged==='1'){ el.dataset.dragged=''; return; }
+  if(el.classList.contains('swiped')){ closeSwipe(el); return; }
+  goEdit(id);
 }
 
 /* ════════ SCREEN: FORM ════════ */
@@ -931,7 +993,7 @@ function renderPrint(key){
   let rows=me.map(e=>`<div class="pt pt-row">
     <div>${fmtShort(e.date)}</div><div>${dayShortPL(e.date)}</div>
     <div>${e.wejscie}</div><div>${e.wyjscie}</div>
-    <div>${fmtDur(eMin(e))}</div><div>${String(e.stawka||settings.stawka).replace('.',',')} zł</div>
+    <div>${fmtDur(eMin(e))}</div>
     <div>${fmtMoney(eEarn(e))}</div></div>`).join('');
 
   document.getElementById('screen').innerHTML=`
@@ -944,16 +1006,17 @@ function renderPrint(key){
       <div class="print-hdr">
         <div class="print-hdr-title">Raport czasu pracy</div>
         <div class="print-hdr-sub">${monthLabel(key)}</div>
+        <div class="print-hdr-rate">Stawka godzinowa: ${String(settings.stawka).replace('.',',')} zł/h</div>
         <div class="print-hdr-date">Wygenerowano: ${fmtShort(today)}</div>
       </div>
       <div class="pt pt-head">
         <div>Data</div><div>Dzień</div><div>Wejście</div>
-        <div>Wyjście</div><div>Czas</div><div>Stawka</div><div>Kwota</div>
+        <div>Wyjście</div><div>Czas</div><div>Kwota</div>
       </div>
       ${rows||'<div style="padding:14px 16px;color:var(--text3);font-size:14px">Brak wpisów</div>'}
       <div class="pt pt-sum">
         <div>RAZEM</div><div></div><div></div><div></div>
-        <div>${fmtDur(tm)}</div><div></div><div>${fmtMoney(te)}</div>
+        <div>${fmtDur(tm)}</div><div>${fmtMoney(te)}</div>
       </div>
     </div>
   </div>
@@ -984,7 +1047,17 @@ function renderSettings(){
         </div>
       </div>
     </div>
-    <p class="sec-hdr">Miejsca pracy</p>
+    <p class="sec-hdr">Domyślne miejsce pracy</p>
+    <div class="card">
+      <div class="row">
+        <span class="form-lbl">Miejsce pracy</span>
+        <div class="form-right">
+          <input class="form-input" id="sLoc" type="text" placeholder="Np. Biuro"
+            value="${escH(settings.defaultLocation||'')}" oninput="saveDefaultLoc()">
+        </div>
+      </div>
+    </div>
+    <p class="sec-hdr">Zapisane miejsca pracy</p>
     <div class="card">
       ${settings.locations.length?settings.locations.map((l,i)=>`
         <div class="row">
@@ -1009,6 +1082,12 @@ function renderSettings(){
 function saveStawka(){
   const v=parseFloat(document.getElementById('sStaw')?.value)||0;
   if(v>0){settings.stawka=v;saveSettings();showToast('Stawka zapisana ✓');}
+}
+function saveDefaultLoc(){
+  const v=(document.getElementById('sLoc')?.value||'').trim();
+  settings.defaultLocation=v;
+  saveSettings();
+  if(v) addLocation(v);
 }
 function removeLoc(i){
   settings.locations.splice(i,1);
