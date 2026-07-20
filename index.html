@@ -284,7 +284,7 @@ input[type="number"]::-webkit-outer-spin-button{-webkit-appearance:none}
 .export-bar{position:sticky;bottom:0;background:var(--nav-bg);
   backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);
   border-top:1px solid var(--sep);padding:12px 16px calc(var(--safe-bot)+12px)}
-.export-btn{width:100%;background:var(--blue);color:#fff;border-radius:14px;
+.export-btn{width:65%;margin:0 auto;background:var(--blue);color:#fff;border-radius:14px;
   padding:15px;font-size:17px;font-weight:600;display:flex;align-items:center;
   justify-content:center;gap:8px;box-shadow:0 4px 16px rgba(0,122,255,.35)}
 .export-btn:active{transform:scale(.98);opacity:.9}
@@ -305,15 +305,21 @@ input[type="number"]::-webkit-outer-spin-button{-webkit-appearance:none}
 @media(prefers-color-scheme:dark){.sheet-handle{background:rgba(255,255,255,.2)}}
 .sheet-title{text-align:center;font-size:13px;font-weight:600;
   color:var(--text3);margin-bottom:16px}
-.share-icons{display:flex;gap:14px;overflow-x:auto;padding-bottom:8px;
-  margin-bottom:14px;scrollbar-width:none}
-.share-icons::-webkit-scrollbar{display:none}
-.sh-item{display:flex;flex-direction:column;align-items:center;gap:6px;
-  flex-shrink:0;cursor:pointer}
-.sh-item:active{opacity:.6}
 .sh-bubble{width:58px;height:58px;border-radius:14px;display:flex;
   align-items:center;justify-content:center;font-size:28px}
 .sh-lbl{font-size:11px;color:var(--text);text-align:center;max-width:64px}
+.sheet.sheet-tall{min-height:52vh;display:flex;flex-direction:column}
+.sh-list{background:var(--bg-card);border-radius:14px;overflow:hidden;
+  margin-bottom:14px;box-shadow:var(--shadow)}
+.sh-row{display:flex;align-items:center;gap:14px;padding:15px 16px;
+  border-bottom:1px solid var(--sep);cursor:pointer;transition:background .1s}
+.sh-row:last-child{border-bottom:none}
+.sh-row:active{background:rgba(0,0,0,.05)}
+@media(prefers-color-scheme:dark){.sh-row:active{background:rgba(255,255,255,.07)}}
+.sh-row-bubble{width:40px;height:40px;border-radius:11px;display:flex;
+  align-items:center;justify-content:center;font-size:19px;flex-shrink:0}
+.sh-row-label{font-size:16px;font-weight:500;color:var(--text);flex:1}
+.sh-row .chev{margin-left:0}
 .sheet-cancel{width:100%;background:var(--bg-card);border-radius:14px;
   padding:16px;font-size:17px;font-weight:600;color:var(--blue)}
 .sheet-cancel:active{opacity:.6}
@@ -709,6 +715,7 @@ function showLocationPicker(cb, last, locs){
   all.forEach(l=>{
     items+=`<div class="loc-item" onclick="pickLoc(${JSON.stringify(l)})">${escH(l)}</div>`;
   });
+  document.getElementById('msheet').className='sheet';
   document.getElementById('msheet').innerHTML=`
     <div class="sheet-handle"></div>
     <div class="sheet-title">Miejsce pracy</div>
@@ -1361,23 +1368,25 @@ function renderNB({back,left,title,large,right}={}){
 
 /* ════════ SHARE SHEET ════════ */
 function showShareSheet(key){
+  document.getElementById('msheet').className='sheet sheet-tall';
   document.getElementById('msheet').innerHTML=`
     <div class="sheet-handle"></div>
     <div class="sheet-title">Eksportuj raport — ${monthLabel(key)}</div>
-    <div class="share-icons">
-      <div class="sh-item" onclick="push('print',{key:'${key}'});closeModal()">
-        <div class="sh-bubble" style="background:#e8f0fe">📄</div>
-        <span class="sh-lbl">Podgląd PDF</span></div>
-      <div class="sh-item" onclick="closeModal();sharePDF('${key}')">
-        <div class="sh-bubble" style="background:#e8f0fe">📤</div>
-        <span class="sh-lbl">Udostępnij PDF</span></div>
-      <div class="sh-item" onclick="closeModal();downloadPDF('${key}')">
-        <div class="sh-bubble" style="background:#fff3e0">⬇️</div>
-        <span class="sh-lbl">Pobierz PDF</span></div>
-      <div class="sh-item" onclick="shareCSV('${key}')">
-        <div class="sh-bubble" style="background:#e8f5e9">📊</div>
-        <span class="sh-lbl">Eksport CSV</span></div>
+    <div class="sh-list">
+      <div class="sh-row" onclick="push('print',{key:'${key}'});closeModal()">
+        <div class="sh-row-bubble" style="background:#e8f0fe">📄</div>
+        <span class="sh-row-label">Podgląd PDF</span>
+        <span class="chev">${ICON_CHEV}</span></div>
+      <div class="sh-row" onclick="closeModal();downloadPDF('${key}')">
+        <div class="sh-row-bubble" style="background:#fff3e0">⬇️</div>
+        <span class="sh-row-label">Pobierz PDF</span>
+        <span class="chev">${ICON_CHEV}</span></div>
+      <div class="sh-row" onclick="closeModal();sharePDF('${key}')">
+        <div class="sh-row-bubble" style="background:#e8f0fe">📤</div>
+        <span class="sh-row-label">Udostępnij PDF</span>
+        <span class="chev">${ICON_CHEV}</span></div>
     </div>
+    <div style="flex:1"></div>
     <button class="sheet-cancel" onclick="closeModal()">Anuluj</button>`;
   document.getElementById('modal').classList.add('open');
 }
