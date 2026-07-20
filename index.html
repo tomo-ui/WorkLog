@@ -40,7 +40,7 @@ button{cursor:pointer;border:none;background:none}
   position:relative;z-index:100}
 .nb-row{display:flex;align-items:center;justify-content:space-between;padding:0 4px;height:44px}
 .nb-title{font-size:17px;font-weight:600;color:var(--text);flex:1;text-align:center;padding:0 8px}
-.nb-large{font-size:34px;font-weight:700;color:var(--text);padding:4px 16px 12px}
+.nb-large{font-size:34px;font-weight:700;color:var(--text);padding:4px 16px 12px;text-align:center}
 .nb-btn{color:var(--blue);font-size:17px;padding:6px 10px;display:flex;align-items:center;
   gap:3px;min-width:56px;transition:opacity .15s;white-space:nowrap}
 .nb-btn:active{opacity:.4}
@@ -49,6 +49,15 @@ button{cursor:pointer;border:none;background:none}
 .nb-btn.bold{font-weight:600}
 .nb-btn:disabled{opacity:.3;pointer-events:none}
 .nb-btn.danger{color:var(--red)}
+#quickLogout{position:absolute;z-index:160;top:calc(var(--safe-top) + 7px);right:12px;
+  width:30px;height:30px;border-radius:50%;display:none;align-items:center;justify-content:center;
+  background:rgba(255,59,48,.13);color:#FF6961;font-size:25px;font-weight:400;line-height:1;
+  box-shadow:none;border:1px solid rgba(255,59,48,.22);transition:transform .15s,opacity .15s}
+#app.logged #quickLogout{display:flex}
+#app.logged #navbar .nb-row{padding-right:48px}
+#quickLogout:active{transform:scale(.9);opacity:.65}
+.row-action{margin-left:auto;padding:7px 0 7px 14px;font-size:15px;font-weight:600;flex-shrink:0}
+.row-action.danger{color:var(--red)}
 /* ── SCREEN ── */
 #screen{flex:1;overflow-y:auto;overflow-x:hidden;-webkit-overflow-scrolling:touch;
   scrollbar-width:none;background:var(--bg);position:relative}
@@ -343,6 +352,7 @@ input[type="number"]::-webkit-outer-spin-button{-webkit-appearance:none}
 <div id="app">
   <div id="navbar"></div>
   <div id="screen"></div>
+  <button id="quickLogout" onclick="logout()" aria-label="Wyloguj się" title="Wyloguj się">×</button>
 </div>
 <div id="modal" onclick="closeModal(event)">
   <div class="sheet" id="msheet"></div>
@@ -374,6 +384,8 @@ const LEGACY_PK  = 'wl_pending_v1';
 const PROFILES_KEY = 'wl_profiles_v1';
 const ACTIVE_PROFILE_KEY = 'wl_active_profile_v1';
 const LOGIN_SESSION_KEY = 'wl_logged_profile_v1';
+const ADMIN_PROFILE_ID = 'wl_builtin_admin';
+const ADMIN_PIN = '9999';
 
 let activeProfileId = null;
 let profiles = [];
@@ -392,7 +404,7 @@ function hashPin(pin){
 }
 function load(){
   profiles=readProfiles();
-  if(!profiles.length){
+  if(!profiles.some(p=>!p.builtIn)){
     try{
       const oldSettings=JSON.parse(localStorage.getItem(LEGACY_SSK)||'{}');
       if(oldSettings._setup){
@@ -402,6 +414,10 @@ function load(){
       }
     }catch(e){}
   }
+  const storedAdmin=profiles.find(p=>p.id===ADMIN_PROFILE_ID);
+  if(!storedAdmin) profiles.unshift({id:ADMIN_PROFILE_ID,name:'Administrator',isAdmin:true,builtIn:true});
+  profiles.forEach(p=>{if(!p.builtIn)p.isAdmin=false;});
+  saveProfiles();
   activeProfileId=localStorage.getItem(ACTIVE_PROFILE_KEY);
   if(!profiles.some(p=>p.id===activeProfileId)) activeProfileId=null;
   if(!activeProfileId){entries=[];settings={stawka:0,locations:[],lastLocation:'',defaultLocation:''};pending=null;return;}
@@ -410,7 +426,10 @@ function load(){
   try{ settings={...settings,...JSON.parse(localStorage.getItem(isLegacy?LEGACY_SSK:profileKey('wl_settings_v2'))||'{}')}; }catch(e){}
   try{ pending=JSON.parse(localStorage.getItem(isLegacy?LEGACY_PK:profileKey('wl_pending_v1'))||'null'); }catch(e){}
 }
-function storageKey(key){return profiles.find(p=>p.id===activeProfileId)?.legacy?({"wl_entries_v1":LEGACY_SK,"wl_settings_v2":LEGACY_SSK,"wl_pending_v1":LEGACY_PK}[key]):profileKey(key);}
+function keyForProfile(profile,key){return profile?.legacy?({"wl_entries_v1":LEGACY_SK,"wl_settings_v2":LEGACY_SSK,"wl_pending_v1":LEGACY_PK}[key]):`${key}_${profile.id}`;}
+function storageKey(key){return keyForProfile(profiles.find(p=>p.id===activeProfileId),key);}
+function readProfileEntries(profile){try{return JSON.parse(localStorage.getItem(keyForProfile(profile,'wl_entries_v1'))||'[]');}catch(e){return [];}}
+function writeProfileEntries(profile,list){localStorage.setItem(keyForProfile(profile,'wl_entries_v1'),JSON.stringify(list));}
 function saveEntries(){ localStorage.setItem(storageKey('wl_entries_v1'),JSON.stringify(entries)); }
 function saveSettings(){ localStorage.setItem(storageKey('wl_settings_v2'),JSON.stringify(settings)); }
 function savePending(){ localStorage.setItem(storageKey('wl_pending_v1'),JSON.stringify(pending)); }
@@ -498,11 +517,15 @@ function render(sc,p,dir='push'){
     case 'form':    renderForm(p); break;
     case 'print':   renderPrint(p.key); break;
     case 'settings':renderSettings(); break;
+    case 'admin':renderAdmin(); break;
+    case 'adminProfile':renderAdminProfile(p.id); break;
+    case 'adminEntry':renderAdminEntry(p.profileId,p.entryId); break;
   }
 }
 
 /* ════════ ONBOARDING ════════ */
 function showOnboarding(){
+  document.getElementById('app').classList.remove('logged');
   document.getElementById('navbar').style.display='none';
   document.getElementById('screen').style.overflow='visible';
   document.getElementById('screen').innerHTML=`
@@ -543,10 +566,13 @@ async function finishOnboarding(){
   if(!name){showToast('Podaj nazwę profilu');return;}
   if(!/^\d{4}$/.test(pin)){showToast('PIN musi mieć dokładnie 4 cyfry');return;}
   if(pin!==pin2){showToast('Wpisane PIN-y są różne');return;}
+  const pinHash=await hashPin(pin);
+  if(pin===ADMIN_PIN){showToast('Ten PIN jest zarezerwowany dla administratora');return;}
+  if(profiles.some(p=>p.pinHash===pinHash)){showToast('Ten PIN jest już używany');return;}
   const r=parseFloat(document.getElementById('onbRate').value)||25;
   const loc=(document.getElementById('onbLoc').value||'').trim();
   activeProfileId=genId();
-  profiles.push({id:activeProfileId,name,pinHash:await hashPin(pin)});
+  profiles.push({id:activeProfileId,name,pinHash,isAdmin:false});
   saveProfiles(); localStorage.setItem(ACTIVE_PROFILE_KEY,activeProfileId);
   sessionStorage.setItem(LOGIN_SESSION_KEY,activeProfileId);
   entries=[]; pending=null;
@@ -564,27 +590,19 @@ async function finishOnboarding(){
 }
 
 function showLogin(){
+  document.getElementById('app').classList.remove('logged');
   document.getElementById('navbar').style.display='none';
   document.getElementById('screen').style.overflow='visible';
-  const buttons=profiles.map(p=>`<button class="sheet-cancel" style="margin-bottom:8px" onclick="selectProfile('${p.id}')">${escH(p.name)}</button>`).join('');
+  const missingPin=profiles.find(p=>!p.builtIn&&!p.pinHash);
+  if(missingPin){showLegacyPinSetup(missingPin.id);return;}
   document.getElementById('screen').innerHTML=`
     <div class="onb-wrap">
-      <div class="onb-icon">🔒</div><div class="onb-title">Zaloguj się</div>
-      <p class="onb-sub">Wybierz profil, a następnie wpisz swój 4-cyfrowy PIN.</p>
-      <div class="onb-card" style="padding:12px">${buttons}</div>
-      <button class="onb-btn" onclick="showOnboarding()">+ Zarejestruj nowy profil</button>
-    </div>`;
-}
-function selectProfile(id){
-  const profile=profiles.find(p=>p.id===id); if(!profile)return;
-  if(!profile.pinHash){showLegacyPinSetup(id);return;}
-  document.getElementById('screen').innerHTML=`
-    <div class="onb-wrap"><div class="onb-icon">🔒</div><div class="onb-title">${escH(profile.name)}</div>
-      <p class="onb-sub">Wpisz 4-cyfrowy PIN, aby kontynuować.</p>
+      <div class="onb-title" style="margin-bottom:32px">WorkLog</div>
       <div class="onb-card"><div class="onb-field"><span class="onb-field-label">PIN</span>
-        <input class="onb-input" id="loginPin" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="4" placeholder="••••" autofocus onkeydown="if(event.key==='Enter')loginProfile('${id}')"></div></div>
-      <button class="onb-btn" onclick="loginProfile('${id}')">Zaloguj się</button>
-      <button class="nb-btn" style="margin-top:14px" onclick="showLogin()">Wybierz inny profil</button></div>`;
+        <input class="onb-input" id="loginPin" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="4" placeholder="••••" autofocus onkeydown="if(event.key==='Enter')loginByPin()"></div>
+        <button class="onb-btn" style="max-width:none;border-radius:0 0 16px 16px;box-shadow:none" onclick="loginByPin()">Zaloguj się</button></div>
+      <button class="nb-btn" style="margin-top:14px" onclick="showOnboarding()">Zarejestruj nowy profil</button>
+    </div>`;
   setTimeout(()=>document.getElementById('loginPin')?.focus(),50);
 }
 function showLegacyPinSetup(id){
@@ -598,24 +616,29 @@ async function saveLegacyPin(id){
   const pin=(document.getElementById('legacyPin').value||'').replace(/\D/g,'');
   const pin2=(document.getElementById('legacyPin2').value||'').replace(/\D/g,'');
   if(!/^\d{4}$/.test(pin)||pin!==pin2){showToast('Wpisz dwa takie same 4-cyfrowe PIN-y');return;}
+  if(pin===ADMIN_PIN){showToast('Ten PIN jest zarezerwowany dla administratora');return;}
   const p=profiles.find(p=>p.id===id); if(!p)return;
-  p.pinHash=await hashPin(pin); saveProfiles(); selectProfile(id);
+  p.pinHash=await hashPin(pin); saveProfiles();
+  localStorage.setItem(ACTIVE_PROFILE_KEY,id); showLogin();
 }
-async function loginProfile(id){
+async function loginByPin(){
   const pin=(document.getElementById('loginPin').value||'').replace(/\D/g,'');
-  const profile=profiles.find(p=>p.id===id);
   if(!/^\d{4}$/.test(pin)){showToast('Wpisz 4-cyfrowy PIN');return;}
-  if(!profile||await hashPin(pin)!==profile.pinHash){showToast('Nieprawidłowy PIN');return;}
-  activeProfileId=id; localStorage.setItem(ACTIVE_PROFILE_KEY,id);
-  sessionStorage.setItem(LOGIN_SESSION_KEY,id); load(); startApp();
+  const pinHash=await hashPin(pin);
+  const profile=pin===ADMIN_PIN?profiles.find(p=>p.id===ADMIN_PROFILE_ID):profiles.find(p=>!p.builtIn&&p.pinHash===pinHash);
+  if(!profile){showToast('Nieprawidłowy PIN');return;}
+  activeProfileId=profile.id; localStorage.setItem(ACTIVE_PROFILE_KEY,profile.id);
+  sessionStorage.setItem(LOGIN_SESSION_KEY,profile.id); load(); startApp();
 }
 function startApp(){
+  document.getElementById('app').classList.add('logged');
   document.getElementById('navbar').style.display=''; document.getElementById('screen').style.overflow='';
   stack=[{sc:'months',p:{}}]; history.replaceState({idx:0},'',''); render('months',{},'push');
 }
 function logout(){
   if(!confirm('Wylogować z profilu?'))return;
   sessionStorage.removeItem(LOGIN_SESSION_KEY); activeProfileId=null; entries=[]; pending=null;
+  document.getElementById('app').classList.remove('logged');
   showLogin();
 }
 
@@ -703,6 +726,11 @@ window.pickLocInput=function(){
 
 /* ════════ SCREEN: MONTHS ════════ */
 function renderMonths(){
+  if(activeProfile()?.builtIn){
+    renderNB({large:'WorkLog'});
+    document.getElementById('screen').innerHTML=`<div class="sp"><div class="settings-avatar"><div class="avatar-icon">🛡️</div><div class="avatar-name">Administrator</div><div class="avatar-sub">Zarządzanie aplikacją</div></div><p class="sec-hdr">Narzędzia</p><div class="card"><div class="row tap" onclick="goAdmin()"><div class="row-main"><div class="row-title">Zarządzaj profilami i godzinami</div><div class="row-sub">Użytkownicy, wpisy i uprawnienia</div></div><div class="chev">${ICON_CHEV}</div></div><div class="row tap" onclick="goSettings()"><div class="row-main"><div class="row-title">Ustawienia</div><div class="row-sub">Konfiguracja aplikacji</div></div><div class="chev">${ICON_CHEV}</div></div></div></div>`;
+    return;
+  }
   renderNB({large:'WorkLog',right:{html:ICON_GEAR,fn:'goSettings()'}});
   const groups=groupByMonth();
   // Check-in widget
@@ -713,7 +741,6 @@ function renderMonths(){
       <div class="cw-status"><div class="live-dot"></div>Pracujesz teraz</div>
       <div class="cw-timer" id="cw-timer">00:00:00</div>
       <div class="cw-sub">Wejście: ${pending.wejscie} • ${fmtShort(pending.date)}</div>
-      ${pending.miejscePracy?`<div class="cw-loc">📍 ${escH(pending.miejscePracy)}</div>`:''}
       <button class="big-action-btn btn-checkout" onclick="doCheckout()">
         ${ICON_STOP} Wymelduj
       </button>
@@ -1138,7 +1165,65 @@ function renderPrint(key){
 }
 
 /* ════════ SCREEN: SETTINGS ════════ */
+function activeProfile(){return profiles.find(p=>p.id===activeProfileId);}
+function goAdmin(){if(activeProfile()?.isAdmin)push('admin',{});}
+function renderAdmin(){
+  if(!activeProfile()?.isAdmin){pop();return;}
+  renderNB({back:{fn:'pop()',label:'Wstecz'},title:'Administrator'});
+  const rows=profiles.filter(p=>!p.builtIn).map(p=>{
+    const list=readProfileEntries(p);
+    const mins=list.reduce((sum,e)=>sum+eMin(e),0);
+    return `<div class="row tap" onclick="push('adminProfile',{id:'${p.id}'})"><div class="row-main"><div class="row-title">${escH(p.name)}${p.isAdmin?' · Administrator':''}</div><div class="row-sub">${list.length} wpisów · ${fmtMin(mins)}</div></div><div class="chev">${ICON_CHEV}</div></div>`;
+  }).join('');
+  document.getElementById('screen').innerHTML=`<div class="sp"><div class="info-banner"><p>Zarządzaj profilami oraz wpisami godzin. Zmiany są zapisywane lokalnie na tym urządzeniu.</p></div><p class="sec-hdr">Profile</p><div class="card">${rows||'<div class="row">Brak profili</div>'}</div></div>`;
+}
+function renderAdminProfile(id){
+  if(!activeProfile()?.isAdmin){pop();return;}
+  const profile=profiles.find(p=>p.id===id); if(!profile||profile.builtIn){pop();return;}
+  const list=readProfileEntries(profile).sort((a,b)=>b.date.localeCompare(a.date)||b.wejscie.localeCompare(a.wejscie));
+  const total=list.reduce((sum,e)=>sum+eMin(e),0);
+  const items=list.map(e=>`<div class="row"><div class="row-main"><div class="row-title">${fmtShort(e.date)} · ${e.wejscie}–${e.wyjscie}</div><div class="row-sub">${fmtMin(eMin(e))}</div></div><button class="row-action" style="color:var(--blue)" onclick="adminEditEntry('${id}','${e.id}')">Edytuj</button><button class="row-action danger" onclick="adminDeleteEntry('${id}','${e.id}')">Usuń</button></div>`).join('');
+  renderNB({back:{fn:'pop()',label:'Profile'},title:escH(profile.name)});
+  document.getElementById('screen').innerHTML=`<div class="sp"><p class="sec-hdr">Godziny · razem ${fmtMin(total)}</p><div class="card">${items||'<div class="row"><span style="color:var(--text3)">Brak wpisów</span></div>'}</div><p class="sec-hdr">Profil</p><div class="card">${profile.id===activeProfileId?'<div class="row"><span style="color:var(--text3)">Nie można usunąć aktualnie zalogowanego administratora.</span></div>':`<div class="row tap" onclick="adminDeleteProfile('${id}')"><span style="color:var(--red);font-size:17px">Usuń użytkownika</span></div>`}</div></div>`;
+}
+function adminEditEntry(profileId,entryId){
+  push('adminEntry',{profileId,entryId});
+}
+function renderAdminEntry(profileId,entryId){
+  if(!activeProfile()?.isAdmin){pop();return;}
+  const profile=profiles.find(p=>p.id===profileId); const entry=readProfileEntries(profile).find(e=>e.id===entryId);
+  if(!profile||!entry){pop();return;}
+  renderNB({back:{fn:'pop()',label:'Wpisy'},title:`Edytuj · ${escH(profile.name)}`,right:{html:'Zapisz',fn:`adminSaveEntry('${profileId}','${entryId}')`,bold:true}});
+  document.getElementById('screen').innerHTML=`<div class="sp"><p class="sec-hdr">Data</p><div class="card"><div class="row"><span class="form-lbl">Data pracy</span><div class="form-right"><input type="date" id="aDate" value="${entry.date}"></div></div></div><p class="sec-hdr">Czas pracy</p><div class="card"><div class="row"><span class="form-lbl">Wejście</span><div class="form-right"><input type="time" id="aWej" value="${entry.wejscie}" onchange="adminUpdateDuration()"></div></div><div class="row"><span class="form-lbl">Wyjście</span><div class="form-right"><input type="time" id="aWyj" value="${entry.wyjscie}" onchange="adminUpdateDuration()"></div></div><div id="adminDuration"></div></div><p class="sec-hdr">Działania</p><div class="card"><div class="del-row row tap" onclick="adminDeleteEntry('${profileId}','${entryId}')">Usuń ten wpis</div></div></div>`;
+  adminUpdateDuration();
+}
+function adminUpdateDuration(){
+  const wej=document.getElementById('aWej')?.value||''; const wyj=document.getElementById('aWyj')?.value||''; const el=document.getElementById('adminDuration');
+  if(!el||!wej||!wyj)return;
+  const minutes=toMin(wyj)-toMin(wej);
+  el.innerHTML=minutes>0?`<div class="calc-row"><span class="calc-lbl">Łącznie godzin</span><span class="calc-val b">${fmtDur(minutes)} (${fmtMin(minutes)})</span></div>`:`<div class="warn-row"><span>Wyjście musi być późniejsze niż wejście</span></div>`;
+}
+function adminSaveEntry(profileId,entryId){
+  const profile=profiles.find(p=>p.id===profileId); const list=readProfileEntries(profile); const entry=list.find(e=>e.id===entryId);
+  const date=document.getElementById('aDate')?.value; const wej=document.getElementById('aWej')?.value; const wyj=document.getElementById('aWyj')?.value;
+  if(!entry||!date||!wej||!wyj||toMin(wyj)<=toMin(wej)){showToast('Sprawdź datę i godziny');return;}
+  Object.assign(entry,{date,wejscie:wej,wyjscie:wyj}); writeProfileEntries(profile,list); pop(); showToast('Godziny zapisane ✓');
+}
+function adminDeleteEntry(profileId,entryId){
+  if(!confirm('Usunąć ten wpis godzin?'))return;
+  const profile=profiles.find(p=>p.id===profileId); writeProfileEntries(profile,readProfileEntries(profile).filter(e=>e.id!==entryId)); renderAdminProfile(profileId); showToast('Wpis usunięty');
+}
+function adminDeleteProfile(id){
+  const profile=profiles.find(p=>p.id===id); if(!profile||profile.id===activeProfileId||!confirm(`Usunąć profil „${profile.name}” wraz z jego wpisami?`))return;
+  localStorage.removeItem(keyForProfile(profile,'wl_entries_v1')); localStorage.removeItem(keyForProfile(profile,'wl_settings_v2')); localStorage.removeItem(keyForProfile(profile,'wl_pending_v1'));
+  profiles=profiles.filter(p=>p.id!==id); saveProfiles(); pop(); showToast('Użytkownik usunięty');
+}
 function renderSettings(){
+  if(activeProfile()?.builtIn){
+    renderNB({back:{fn:'pop()',label:'Wstecz'},title:'Ustawienia'});
+    document.getElementById('screen').innerHTML=`<div class="sp"><p class="sec-hdr">Administrator</p><div class="card"><div class="row tap" onclick="goAdmin()"><div class="row-main"><div class="row-title">Panel administracyjny</div><div class="row-sub">Profile oraz wpisy godzin</div></div><div class="chev">${ICON_CHEV}</div></div><div class="row tap" onclick="logout()"><span style="font-size:17px;color:var(--red)">Wyloguj się</span></div></div></div>`;
+    return;
+  }
   renderNB({back:{fn:'pop()',label:'Wstecz'},title:'Ustawienia'});
   document.getElementById('screen').innerHTML=`
   <div class="sp">
@@ -1171,8 +1256,8 @@ function renderSettings(){
     <div class="card">
       ${settings.locations.length?settings.locations.map((l,i)=>`
         <div class="row">
-          <span class="form-lbl">📍 ${escH(l)}</span>
-          <button style="color:var(--red);font-size:14px" onclick="removeLoc(${i})">Usuń</button>
+          <div class="row-main"><div class="row-title">📍 ${escH(l)}</div></div>
+          <button class="row-action danger" onclick="removeLoc(${i})">Usuń</button>
         </div>`).join('')
         :'<div class="row"><span style="color:var(--text3);font-size:15px">Brak zapisanych miejsc</span></div>'}
     </div>
@@ -1188,10 +1273,11 @@ function renderSettings(){
     </div>
     <p class="sec-hdr">Profil</p>
     <div class="card">
-      <div class="row"><span class="form-lbl">Zalogowano jako</span><span style="color:var(--text3);font-size:16px">${escH(profiles.find(p=>p.id===activeProfileId)?.name||'')}</span></div>
+      <div class="row"><div class="row-main"><div class="row-title">Zalogowano jako</div><div class="row-sub">${escH(profiles.find(p=>p.id===activeProfileId)?.name||'')}</div></div></div>
       <div class="row tap" onclick="logout()"><span style="font-size:17px;color:var(--red)">Wyloguj się</span></div>
       <div class="row tap" onclick="showOnboarding()"><span class="form-lbl">+ Zarejestruj nowy profil</span></div>
     </div>
+    ${activeProfile()?.isAdmin?`<p class="sec-hdr">Administrator</p><div class="card"><div class="row tap" onclick="goAdmin()"><div class="row-main"><div class="row-title">Zarządzaj profilami i godzinami</div><div class="row-sub">Użytkownicy, wpisy i usuwanie danych</div></div><div class="chev">${ICON_CHEV}</div></div></div>`:''}
     <p style="text-align:center;font-size:12px;color:var(--text3);padding:20px">WorkLog · ${entries.length} wpisów</p>
   </div>`;
 }
