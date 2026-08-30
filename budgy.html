@@ -2,7 +2,7 @@
 <html lang="pl">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1.0,viewport-fit=cover">
+<meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,minimum-scale=1.0,user-scalable=no,viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="Budżet">
@@ -10,9 +10,9 @@
 <link rel="manifest" id="pwa-manifest">
 <title>Budżet Domowy</title>
 <style>
-*,*::before,*::after{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
-html{height:100%;-webkit-text-size-adjust:100%}
-body{height:100%;font-family:-apple-system,'Helvetica Neue',sans-serif;background:#F2F2F7;color:#000;overscroll-behavior:none;-webkit-font-smoothing:antialiased}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;touch-action:manipulation}
+html{height:100%;-webkit-text-size-adjust:100%;touch-action:manipulation}
+body{height:100%;font-family:-apple-system,'Helvetica Neue',sans-serif;background:#F2F2F7;color:#000;overscroll-behavior:none;-webkit-font-smoothing:antialiased;touch-action:manipulation}
 input,textarea,button,select{font-family:inherit;font-size:inherit}
 button{cursor:pointer;border:none;background:none}
 :root{
@@ -485,12 +485,21 @@ select{cursor:pointer}
 @media(prefers-reduced-motion:reduce){.pin-dot.filled{animation:none;box-shadow:0 0 8px rgba(52,199,89,.6)}}
 
 /* ── Green glowing animated wordmark (login / PIN screens) ── */
-.logo-glow-wrap{display:inline-block;animation:logoGlowPulse 2.4s ease-in-out infinite}
-@keyframes logoGlowPulse{
-  0%,100%{filter:drop-shadow(0 0 6px rgba(52,199,89,.5)) drop-shadow(0 0 16px rgba(52,199,89,.22))}
-  50%{filter:drop-shadow(0 0 15px rgba(52,199,89,.9)) drop-shadow(0 0 32px rgba(52,199,89,.42))}
+.logo-glow-wrap{position:relative;display:inline-block;isolation:isolate}
+.logo-glow-wrap::after{
+  content:'';position:absolute;inset:-55% -20%;z-index:-1;pointer-events:none;
+  background:radial-gradient(ellipse at center,rgba(52,199,89,.55) 0%,rgba(52,199,89,.18) 45%,rgba(52,199,89,0) 72%);
+  filter:blur(16px);
+  will-change:opacity,transform;
+  transform:translateZ(0) scale(.9);
+  opacity:.55;
+  animation:logoGlowPulse 2.6s cubic-bezier(.45,0,.55,1) infinite;
 }
-@media(prefers-reduced-motion:reduce){.logo-glow-wrap{animation:none;filter:drop-shadow(0 0 10px rgba(52,199,89,.55))}}
+@keyframes logoGlowPulse{
+  0%,100%{opacity:.4;transform:translateZ(0) scale(.88)}
+  50%{opacity:.85;transform:translateZ(0) scale(1.08)}
+}
+@media(prefers-reduced-motion:reduce){.logo-glow-wrap::after{animation:none;opacity:.6;transform:translateZ(0) scale(1)}}
 .logo-letter-green{
   fill:var(--green);fill-opacity:0;stroke:var(--green);stroke-width:1;stroke-opacity:1;
   stroke-dasharray:60;stroke-dashoffset:60;
@@ -1065,7 +1074,7 @@ function renderMonths(){
         </div>
       </div>
     </div>`;
-  const wlTotals=worklogMonthlyTotals();
+  const wlTotals=worklogMonthlyTotals().totals;
   const wlCur=wlTotals[curMonthKey()];
   const wlSub=wlCur?`${Math.floor(wlCur.minutes/60)}h ${Math.round((wlCur.minutes/60%1)*60)}min w tym mies.`:'Brak wpisów w tym mies.';
   const qtilesHtml=`<div class="qtiles">
@@ -2028,6 +2037,7 @@ function renderDaySummary(){
 }
 
 /* ══ WORKLOG INSIGHT (dane z aplikacji WorkLog) ══ */
+const WL_IMPORT_KEY='bg_worklog_import_v1';
 function readWorklogEntries(){
   try{
     const profiles=JSON.parse(localStorage.getItem('wl_profiles_v1')||'[]');
@@ -2054,32 +2064,81 @@ function wlMinutes(e){
   return diff;
 }
 function wlEarn(e,defRate){return(wlMinutes(e)/60)*(e.stawka||defRate||0);}
+function readWorklogImport(){
+  try{
+    const raw=JSON.parse(localStorage.getItem(WL_IMPORT_KEY)||'null');
+    if(raw&&raw.months)return raw;
+  }catch(e){}
+  return null;
+}
 function worklogMonthlyTotals(){
-  const entries=readWorklogEntries();
-  const totals={};
-  entries.forEach(e=>{
-    if(!e.date)return;
-    const key=e.date.slice(0,7);
-    if(!totals[key])totals[key]={minutes:0,earn:0,count:0};
-    totals[key].minutes+=wlMinutes(e);
-    totals[key].earn+=wlEarn(e);
-    totals[key].count++;
-  });
-  return totals;
+  /* 1) Próba odczytu na żywo — działa tylko, gdy Budgy i WorkLog są
+        hostowane pod tym samym originem (współdzielą localStorage). */
+  const liveEntries=readWorklogEntries();
+  if(liveEntries.length){
+    const totals={};
+    liveEntries.forEach(e=>{
+      if(!e.date)return;
+      const key=e.date.slice(0,7);
+      if(!totals[key])totals[key]={minutes:0,earn:0,count:0};
+      totals[key].minutes+=wlMinutes(e);
+      totals[key].earn+=wlEarn(e);
+      totals[key].count++;
+    });
+    return {totals,source:'live'};
+  }
+  /* 2) Fallback — ręcznie wklejona migawka wyeksportowana z WorkLog. */
+  const imp=readWorklogImport();
+  if(imp)return {totals:imp.months,source:'import',exportedAt:imp.exportedAt};
+  return {totals:{},source:'none'};
+}
+function showWorklogImport(){
+  document.getElementById('msh').innerHTML=`
+    <div class="sh-handle"></div>
+    <div class="sh-title">Wklej dane z WorkLog</div>
+    <p style="text-align:center;color:var(--text2);font-size:14px;line-height:1.5;margin:0 0 14px;padding:0 6px">
+      W WorkLog: Ustawienia → „Eksportuj godziny do Budgy” — tekst skopiuje się automatycznie. Wklej go poniżej.
+    </p>
+    <textarea id="wl-paste" placeholder="Wklej tutaj skopiowany tekst…" style="width:100%;min-height:120px;
+      border-radius:12px;border:1px solid var(--sep);padding:10px;font-size:12px;font-family:monospace;
+      background:var(--bg);color:var(--text)"></textarea>
+    <button class="big-btn big-btn-green" style="width:100%;margin:14px 0 10px" onclick="submitWorklogImport()">Wczytaj dane</button>
+    <button class="sh-cancel" onclick="closeMod()">Anuluj</button>`;
+  document.getElementById('modal').classList.add('open');
+}
+function submitWorklogImport(){
+  const raw=(document.getElementById('wl-paste').value||'').trim();
+  if(!raw){showToast('Wklej najpierw skopiowany tekst');return;}
+  let data;
+  try{data=JSON.parse(raw);}catch(e){showToast('To nie wygląda na poprawne dane z WorkLog');return;}
+  if(!data||data.source!=='worklog'||!data.months){showToast('To nie wygląda na eksport z WorkLog');return;}
+  localStorage.setItem(WL_IMPORT_KEY,JSON.stringify(data));
+  document.getElementById('modal').classList.remove('open');
+  showToast('Dane z WorkLog wczytane ✓');
+  renderWorklogInsight();
 }
 function renderWorklogInsight(){
   nb({back:{fn:'pop()',label:'Wstecz'},title:'Godziny pracy'});
-  const totals=worklogMonthlyTotals();
+  const {totals,source,exportedAt}=worklogMonthlyTotals();
   const keys=Object.keys(totals).sort((a,b)=>b.localeCompare(a));
   let html='<div class="sp">';
   if(!keys.length){
     html+=`<div class="empty">
       <div class="empty-icon" style="width:64px;height:64px;display:inline-flex;align-items:center;justify-content:center;color:var(--blue)">${icon('calendar',34)}</div>
       <div class="empty-title">Brak danych o godzinach</div>
-      <p class="empty-sub">Nie znaleziono na tym urządzeniu zapisanych godzin z aplikacji WorkLog. Dodaj przychód ręcznie albo zarejestruj godziny w WorkLog.</p>
-      <button class="big-btn big-btn-green" onclick="push('f-income',{monthKey:'${curMonthKey()}'})">+ Dodaj przychód ręcznie</button>
+      <p class="empty-sub">Nie znaleziono na tym urządzeniu zapisanych godzin z aplikacji WorkLog. Wklej dane wyeksportowane z WorkLog albo dodaj przychód ręcznie.</p>
+      <button class="big-btn big-btn-green" style="margin-bottom:10px" onclick="showWorklogImport()">📋 Wklej dane z WorkLog</button>
+      <button class="big-btn" onclick="push('f-income',{monthKey:'${curMonthKey()}'})">+ Dodaj przychód ręcznie</button>
     </div>`;
   } else {
+    if(source==='import'){
+      const when=exportedAt?new Date(exportedAt).toLocaleString('pl-PL',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'}):'';
+      html+=`<div style="margin:0 16px 12px;padding:10px 14px;border-radius:12px;background:rgba(0,122,255,.1);
+        color:var(--blue);font-size:12.5px;font-weight:600;display:flex;justify-content:space-between;align-items:center;gap:8px">
+        <span>📋 Dane wklejone z WorkLog${when?' · '+when:''}</span>
+        <span class="tap" style="text-decoration:underline" onclick="showWorklogImport()">Odśwież</span>
+      </div>`;
+    }
     html+='<p class="sh">Godziny i zarobki wg miesiąca</p><div class="card">';
     keys.forEach(k=>{
       const t=totals[k];
@@ -2094,7 +2153,8 @@ function renderWorklogInsight(){
       </div>`;
     });
     html+=`</div>
-    <div style="padding:12px 16px 0">
+    <div style="padding:12px 16px 0;display:flex;flex-direction:column;gap:10px">
+      <button class="big-btn" style="width:100%" onclick="showWorklogImport()">📋 Wklej nowsze dane z WorkLog</button>
       <button class="big-btn" style="width:100%" onclick="push('f-income',{monthKey:'${curMonthKey()}'})">+ Dodaj przychód ręcznie</button>
     </div>`;
   }
@@ -2408,6 +2468,11 @@ function budgyGlowLogo(scale=1){
     </svg>
   </div>`;
 }
+
+/* Blokada zoomu gestem szczypania (pinch) w Safari/iOS */
+['gesturestart','gesturechange','gestureend'].forEach(ev=>{
+  document.addEventListener(ev,e=>e.preventDefault());
+});
 
 /* ══ INIT ══ */
 load();
