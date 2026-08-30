@@ -1285,6 +1285,10 @@ function renderSettings(){
     </div>
     <p class="sec-hdr">Dane</p>
     <div class="card">
+      <div class="row tap" onclick="exportToBudgy()">
+        <span class="form-lbl">💸 Eksportuj godziny do Budgy</span>
+        <div class="chev">${ICON_CHEV}</div>
+      </div>
       <div class="row tap" onclick="exportAllCSV()">
         <span class="form-lbl">📊 Eksportuj wszystkie dane (CSV)</span>
         <div class="chev">${ICON_CHEV}</div>
@@ -1322,6 +1326,42 @@ function clearAllConfirm(){
   if(confirm('Usunąć WSZYSTKIE wpisy? Tego nie można cofnąć.')){
     entries=[];saveEntries();selDay=null;curMonthKey=null;
     showToast('Wszystkie dane usunięte');renderSettings();
+  }
+}
+function exportToBudgy(){
+  const totals={};
+  entries.filter(e=>eMin(e)>0).forEach(e=>{
+    const key=e.date.slice(0,7);
+    if(!totals[key])totals[key]={minutes:0,earn:0,count:0};
+    totals[key].minutes+=eMin(e);
+    totals[key].earn+=eEarn(e);
+    totals[key].count++;
+  });
+  Object.keys(totals).forEach(k=>{totals[k].earn=Math.round(totals[k].earn*100)/100;});
+  const payload={source:'worklog',version:1,exportedAt:new Date().toISOString(),months:totals};
+  const json=JSON.stringify(payload);
+  const openFallback=()=>{
+    document.getElementById('msheet').className='sheet sheet-tall';
+    document.getElementById('msheet').innerHTML=`
+      <div class="sheet-handle"></div>
+      <div class="sheet-title">Eksport do Budgy</div>
+      <p style="text-align:center;color:var(--text3);font-size:14px;margin:0 0 14px;padding:0 8px">
+        Skopiuj poniższy tekst i wklej go w Budgy → kafelek „Godziny pracy” → „Wklej dane z WorkLog”.
+      </p>
+      <textarea readonly onclick="this.select()" style="width:100%;min-height:120px;border-radius:12px;
+        border:1px solid var(--sep,#ddd);padding:10px;font-size:12px;font-family:monospace;
+        background:var(--card-bg,#f5f5f7);color:inherit">${json}</textarea>
+      <button class="export-btn" style="margin-top:14px" onclick="navigator.clipboard&&navigator.clipboard.writeText(${JSON.stringify(json)});showToast('Skopiowano ✓')">Kopiuj ponownie</button>
+      <button class="sheet-cancel" onclick="closeModal()">Zamknij</button>`;
+    document.getElementById('modal').classList.add('open');
+  };
+  if(navigator.clipboard&&navigator.clipboard.writeText){
+    navigator.clipboard.writeText(json).then(()=>{
+      showToast('Skopiowano — wklej w Budgy ✓');
+      openFallback();
+    }).catch(openFallback);
+  } else {
+    openFallback();
   }
 }
 function exportAllCSV(){
