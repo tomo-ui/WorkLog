@@ -289,9 +289,9 @@ select{cursor:pointer}
 .empty-icon{font-size:64px}
 .empty-title{font-size:20px;font-weight:700;color:var(--text)}
 .empty-sub{font-size:14px;color:var(--text3);line-height:1.6;max-width:260px}
-.big-btn{background:var(--blue);color:#fff;border-radius:14px;
+.big-btn{background:var(--orange);color:#fff;border-radius:14px;
   padding:15px 32px;font-size:17px;font-weight:600;
-  box-shadow:0 6px 20px rgba(0,122,255,.35);transition:all .15s}
+  box-shadow:0 6px 20px rgba(255, 136, 0, 0.35);transition:all .15s}
 .big-btn:active{transform:scale(.97);opacity:.9}
 .big-btn-green{background:var(--green);box-shadow:0 6px 20px rgba(52,199,89,.4)}
 .big-btn-purple{background:var(--purple);box-shadow:0 6px 20px rgba(175,82,222,.4)}
@@ -760,7 +760,8 @@ function render(sc,p,dir='push'){
     case 'year-summary':renderYearSummary();break;
     case 'month-summary':renderMonthSummary(p.key);break;
     case 'day-summary':renderDaySummary();break;
-    case 'worklog-insight':renderWorklogInsight();break;
+    case 'work-hours':renderWorkHours();break;
+    case 'work-hours-form':renderWorkHoursForm(p);break;
   }
 }
 
@@ -1074,12 +1075,11 @@ function renderMonths(){
         </div>
       </div>
     </div>`;
-  const wlTotals=worklogMonthlyTotals().totals;
-  const wlCur=wlTotals[curMonthKey()];
-  const wlSub=wlCur?`${Math.floor(wlCur.minutes/60)}h ${Math.round((wlCur.minutes/60%1)*60)}min w tym mies.`:'Brak wpisów w tym mies.';
+  const whCur=monthWorkHours(curMonthKey());
+  const whSub=whCur?`${whCur.hours}h · ${fmtMoneyAbs(whCur.hours*whCur.rate)}`:'Dodaj godziny';
   const qtilesHtml=`<div class="qtiles">
       <div class="qtile" onclick="push('year-summary',{})">
-        <div class="qtile-ic" style="background:rgba(0,122,255,.12);color:var(--blue)">${icon('chart',18)}</div>
+        <div class="qtile-ic" style="background:rgba(0,122,255,.12);color:var(--orange)">${icon('chart',18)}</div>
         <div class="qtile-lbl">Ten rok</div>
         <div class="qtile-sub">Podsumowanie ${new Date().getFullYear()}</div>
       </div>
@@ -1093,10 +1093,10 @@ function renderMonths(){
         <div class="qtile-lbl">Dzisiaj</div>
         <div class="qtile-sub">${fmtDate(today)}</div>
       </div>
-      <div class="qtile" onclick="push('worklog-insight',{})">
+      <div class="qtile" onclick="push('work-hours',{})">
         <div class="qtile-ic" style="background:rgba(175,82,222,.12);color:var(--purple)">${icon('wallet',18)}</div>
         <div class="qtile-lbl">Godziny pracy</div>
-        <div class="qtile-sub">${wlSub}</div>
+        <div class="qtile-sub">${whSub}</div>
       </div>
     </div>`;
   if(!keys.length){
@@ -2036,140 +2036,133 @@ function renderDaySummary(){
   animateCountUps();
 }
 
-/* ══ WORKLOG INSIGHT (dane z aplikacji WorkLog) ══ */
-const WL_IMPORT_KEY='bg_worklog_import_v1';
-function readWorklogEntries(){
-  try{
-    const profiles=JSON.parse(localStorage.getItem('wl_profiles_v1')||'[]');
-    const activeId=localStorage.getItem('wl_active_profile_v1');
-    let raw=null;
-    if(Array.isArray(profiles)&&profiles.length&&activeId){
-      const profile=profiles.find(p=>p.id===activeId);
-      const key=profile&&profile.legacy?'wl_entries_v1':`wl_entries_v1_${activeId}`;
-      raw=localStorage.getItem(key);
-    } else {
-      raw=localStorage.getItem('wl_entries_v1');
-    }
-    const arr=JSON.parse(raw||'[]');
-    return Array.isArray(arr)?arr:[];
-  }catch(e){return [];}
-}
-function wlMinutes(e){
-  if(!e.wejscie||!e.wyjscie)return 0;
-  const [h1,m1]=e.wejscie.split(':').map(Number);
-  const [h2,m2]=e.wyjscie.split(':').map(Number);
-  if([h1,m1,h2,m2].some(n=>isNaN(n)))return 0;
-  let diff=(h2*60+m2)-(h1*60+m1);
-  if(diff<0)diff+=1440;
-  return diff;
-}
-function wlEarn(e,defRate){return(wlMinutes(e)/60)*(e.stawka||defRate||0);}
-function readWorklogImport(){
-  try{
-    const raw=JSON.parse(localStorage.getItem(WL_IMPORT_KEY)||'null');
-    if(raw&&raw.months)return raw;
-  }catch(e){}
-  return null;
-}
-function worklogMonthlyTotals(){
-  /* 1) Próba odczytu na żywo — działa tylko, gdy Budgy i WorkLog są
-        hostowane pod tym samym originem (współdzielą localStorage). */
-  const liveEntries=readWorklogEntries();
-  if(liveEntries.length){
-    const totals={};
-    liveEntries.forEach(e=>{
-      if(!e.date)return;
-      const key=e.date.slice(0,7);
-      if(!totals[key])totals[key]={minutes:0,earn:0,count:0};
-      totals[key].minutes+=wlMinutes(e);
-      totals[key].earn+=wlEarn(e);
-      totals[key].count++;
-    });
-    return {totals,source:'live'};
-  }
-  /* 2) Fallback — ręcznie wklejona migawka wyeksportowana z WorkLog. */
-  const imp=readWorklogImport();
-  if(imp)return {totals:imp.months,source:'import',exportedAt:imp.exportedAt};
-  return {totals:{},source:'none'};
-}
-function showWorklogImport(){
-  document.getElementById('msh').innerHTML=`
-    <div class="sh-handle"></div>
-    <div class="sh-title">Wklej dane z WorkLog</div>
-    <p style="text-align:center;color:var(--text2);font-size:14px;line-height:1.5;margin:0 0 14px;padding:0 6px">
-      W WorkLog: Ustawienia → „Eksportuj godziny do Budgy” — tekst skopiuje się automatycznie. Wklej go poniżej.
-    </p>
-    <textarea id="wl-paste" placeholder="Wklej tutaj skopiowany tekst…" style="width:100%;min-height:120px;
-      border-radius:12px;border:1px solid var(--sep);padding:10px;font-size:12px;font-family:monospace;
-      background:var(--bg);color:var(--text)"></textarea>
-    <button class="big-btn big-btn-green" style="width:100%;margin:14px 0 10px" onclick="submitWorklogImport()">Wczytaj dane</button>
-    <button class="sh-cancel" onclick="closeMod()">Anuluj</button>`;
-  document.getElementById('modal').classList.add('open');
-}
-function submitWorklogImport(){
-  const raw=(document.getElementById('wl-paste').value||'').trim();
-  if(!raw){showToast('Wklej najpierw skopiowany tekst');return;}
-  let data;
-  try{data=JSON.parse(raw);}catch(e){showToast('To nie wygląda na poprawne dane z WorkLog');return;}
-  if(!data||data.source!=='worklog'||!data.months){showToast('To nie wygląda na eksport z WorkLog');return;}
-  localStorage.setItem(WL_IMPORT_KEY,JSON.stringify(data));
-  document.getElementById('modal').classList.remove('open');
-  showToast('Dane z WorkLog wczytane ✓');
-  renderWorklogInsight();
-}
-function renderWorklogInsight(){
-  nb({back:{fn:'pop()',label:'Wstecz'},title:'Godziny pracy'});
-  const {totals,source,exportedAt}=worklogMonthlyTotals();
-  const keys=Object.keys(totals).sort((a,b)=>b.localeCompare(a));
-  let html='<div class="sp">';
-  if(!keys.length){
-    html+=`<div class="empty">
-      <div class="empty-icon" style="width:64px;height:64px;display:inline-flex;align-items:center;justify-content:center;color:var(--blue)">${icon('calendar',34)}</div>
-      <div class="empty-title">Brak danych o godzinach</div>
-      <p class="empty-sub">Nie znaleziono na tym urządzeniu zapisanych godzin z aplikacji WorkLog. Wklej dane wyeksportowane z WorkLog albo dodaj przychód ręcznie.</p>
-      <button class="big-btn big-btn-green" style="margin-bottom:10px" onclick="showWorklogImport()">📋 Wklej dane z WorkLog</button>
-      <button class="big-btn" onclick="push('f-income',{monthKey:'${curMonthKey()}'})">+ Dodaj przychód ręcznie</button>
-    </div>`;
+/* ══ GODZINY PRACY (ręczne godziny + stawka → automatyczny przychód miesiąca) ══ */
+function monthWorkHours(key){return D.months[key]?.workHours||null;}
+function saveWorkHours(key,hours,rate){
+  const m=ensureMonth(key);
+  const earn=Math.round(hours*rate*100)/100;
+  const prev=m.workHours;
+  if(prev&&prev.incomeId&&m.income.some(i=>i.id===prev.incomeId)){
+    const i=m.income.findIndex(x=>x.id===prev.incomeId);
+    m.income[i]={...m.income[i],name:'Godziny pracy',amount:earn};
+    m.workHours={hours,rate,incomeId:prev.incomeId};
   } else {
-    if(source==='import'){
-      const when=exportedAt?new Date(exportedAt).toLocaleString('pl-PL',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'}):'';
-      html+=`<div style="margin:0 16px 12px;padding:10px 14px;border-radius:12px;background:rgba(0,122,255,.1);
-        color:var(--blue);font-size:12.5px;font-weight:600;display:flex;justify-content:space-between;align-items:center;gap:8px">
-        <span>📋 Dane wklejone z WorkLog${when?' · '+when:''}</span>
-        <span class="tap" style="text-decoration:underline" onclick="showWorklogImport()">Odśwież</span>
-      </div>`;
-    }
-    html+='<p class="sh">Godziny i zarobki wg miesiąca</p><div class="card">';
-    keys.forEach(k=>{
-      const t=totals[k];
-      const hrs=t.minutes/60;
-      const hrsLabel=`${Math.floor(hrs)}h ${Math.round((hrs%1)*60)}min`;
-      html+=`<div class="row">
-        <div class="rm"><div class="rt">${monthLabel(k)}</div><div class="rmeta">${t.count} wpisów · ${hrsLabel}</div></div>
-        <div style="display:flex;align-items:center;gap:8px">
-          <span style="font-size:16px;font-weight:700;color:var(--green)">${fmtMoneyAbs(t.earn)}</span>
-          <button class="nb-btn bold" style="padding:4px 6px" onclick="pullWorklogMonth('${k}',${t.earn.toFixed(2)})">Pobierz</button>
-        </div>
+    const id=gid();
+    m.income.push({id,name:'Godziny pracy',amount:earn,date:`${key}-01`,note:`${hours}h × ${fmtMoneyAbs(rate)}/h`});
+    m.workHours={hours,rate,incomeId:id};
+  }
+  save();
+}
+function deleteWorkHours(key){
+  const m=D.months[key];
+  if(!m||!m.workHours)return;
+  if(m.workHours.incomeId)m.income=m.income.filter(i=>i.id!==m.workHours.incomeId);
+  delete m.workHours;
+  save();
+}
+function renderWorkHours(){
+  nb({back:{fn:'pop()',label:'Wstecz'},title:'Godziny pracy'});
+  const keys=Object.keys(D.months).filter(k=>D.months[k].workHours).sort((a,b)=>b.localeCompare(a));
+  let html='<div class="sp">';
+  const curKey=curMonthKey();
+  const curWh=monthWorkHours(curKey);
+  html+=`<div class="sav-card">
+    <div style="display:flex;justify-content:space-between;align-items:center">
+      <div>
+        <div class="sav-title">Ten miesiąc</div>
+        <div class="sav-actual" style="margin-top:4px">${curWh?fmtMoneyAbs(curWh.hours*curWh.rate):'Brak wpisu'}</div>
+        ${curWh?`<div class="sav-sub" style="margin:2px 0 0">${curWh.hours}h × ${fmtMoneyAbs(curWh.rate)}/h</div>`:''}
+      </div>
+      <div class="sav-add-btn" onclick="push('work-hours-form',{key:'${curKey}'})" title="Edytuj">${icon('plus',16)}</div>
+    </div>
+  </div>`;
+  if(keys.length){
+    html+='<p class="sh">Poprzednie miesiące</p><div class="card">';
+    keys.filter(k=>k!==curKey).forEach(k=>{
+      const wh=monthWorkHours(k);
+      html+=`<div class="row tap" onclick="push('work-hours-form',{key:'${k}'})">
+        <div class="rm"><div class="rt">${monthLabel(k)}</div><div class="rmeta">${wh.hours}h × ${fmtMoneyAbs(wh.rate)}/h</div></div>
+        <span style="font-size:16px;font-weight:700;color:var(--green)">${fmtMoneyAbs(wh.hours*wh.rate)}</span>
       </div>`;
     });
-    html+=`</div>
-    <div style="padding:12px 16px 0;display:flex;flex-direction:column;gap:10px">
-      <button class="big-btn" style="width:100%" onclick="showWorklogImport()">📋 Wklej nowsze dane z WorkLog</button>
-      <button class="big-btn" style="width:100%" onclick="push('f-income',{monthKey:'${curMonthKey()}'})">+ Dodaj przychód ręcznie</button>
-    </div>`;
+    html+='</div>';
   }
+  html+=`<div style="padding:12px 16px 0">
+    <button class="big-btn" style="width:100%" onclick="showWorkHoursMonthPicker()">+ Dodaj godziny za inny miesiąc</button>
+  </div>`;
   html+='</div>';
   document.getElementById('sc').innerHTML=html;
   animateCountUps();
 }
-function pullWorklogMonth(key,earn){
-  showConfirm(`Dodać <strong>${fmtMoneyAbs(earn)}</strong> jako przychód „Godziny pracy” do miesiąca <strong>${monthLabel(key)}</strong>?`,()=>{
-    const m=ensureMonth(key);
-    m.income.push({id:gid(),name:'Godziny pracy',amount:earn,date:`${key}-01`,note:'Zaimportowano z WorkLog'});
-    save();
-    showToast('Dodano przychód ✓');
-    push('month',{key,tab:'income'});
-  },{title:'Dodaj jako przychód',confirmLabel:'Dodaj do przychodów'});
+function showWorkHoursMonthPicker(year){
+  const now=new Date();
+  year=year||now.getFullYear();
+  const curKey=curMonthKey();
+  let grid='';
+  for(let m=0;m<12;m++){
+    const key=`${year}-${String(m+1).padStart(2,'0')}`;
+    const has=!!D.months[key]?.workHours;
+    const isCur=key===curKey;
+    grid+=`<div class="month-pick-item${isCur?' cur':''}${has?' has':''}" onclick="closeMod();push('work-hours-form',{key:'${key}'})">${MONTHS[m]}</div>`;
+  }
+  document.getElementById('msh').innerHTML=`
+    <div class="sh-handle"></div>
+    <div class="sh-title">Wybierz miesiąc</div>
+    <div class="mp-year">
+      <span class="mp-year-btn" onclick="showWorkHoursMonthPicker(${year-1})">${ICO_BACK.replace('style="margin-right:2px"','')}</span>
+      <span class="mp-year-lbl">${year}</span>
+      <span class="mp-year-btn" style="transform:scaleX(-1)" onclick="showWorkHoursMonthPicker(${year+1})">${ICO_BACK.replace('style="margin-right:2px"','')}</span>
+    </div>
+    <div class="month-grid">${grid}</div>
+    <button class="sh-cancel mt" onclick="closeMod()">Anuluj</button>`;
+  document.getElementById('modal').classList.add('open');
+}
+function renderWorkHoursForm({key}){
+  nb({left:{label:'Anuluj',fn:'pop()'},title:monthLabel(key),
+    right:{html:'Zapisz',fn:`submitWorkHours('${key}')`,bold:true}});
+  const wh=monthWorkHours(key);
+  document.getElementById('sc').innerHTML=`
+  <div class="sp">
+    <p class="sh">Godziny pracy — ${monthLabel(key)}</p>
+    <div class="card">
+      <div class="row"><span class="fl">Przepracowane godziny</span>
+        <div class="fr"><input type="number" id="wh-hours" min="0" step="0.25" placeholder="0" value="${wh?wh.hours:''}">
+          <span class="fu">h</span></div></div>
+      <div class="row"><span class="fl">Stawka godzinowa</span>
+        <div class="fr"><input type="number" id="wh-rate" min="0" step="0.01" placeholder="0,00" value="${wh?wh.rate:''}">
+          <span class="fu">zł/h</span></div></div>
+    </div>
+    <p class="sh">Podgląd</p>
+    <div class="card">
+      <div class="row"><div class="rm"><div class="rt">Przychód do dodania</div><div class="rmeta">Godziny × stawka</div></div>
+        <span id="wh-preview" style="font-size:18px;font-weight:800;color:var(--green)">${wh?fmtMoneyAbs(wh.hours*wh.rate):fmtMoneyAbs(0)}</span></div>
+    </div>
+    <p class="sh">Kwota zostanie automatycznie dodana jako przychód „Godziny pracy” w tym miesiącu i zaktualizuje się przy każdej zmianie.</p>
+    ${wh?`<div class="card"><div class="del-row row tap" onclick="delWorkHoursForm('${key}')">${ICO_TRASH} Usuń wpis godzin</div></div>`:''}
+    <div style="height:20px"></div>
+  </div>`;
+  const upd=()=>{
+    const h=parseFloat(document.getElementById('wh-hours').value)||0;
+    const r=parseFloat(document.getElementById('wh-rate').value)||0;
+    document.getElementById('wh-preview').textContent=fmtMoneyAbs(h*r);
+  };
+  document.getElementById('wh-hours').addEventListener('input',upd);
+  document.getElementById('wh-rate').addEventListener('input',upd);
+}
+function submitWorkHours(key){
+  const hours=parseFloat(document.getElementById('wh-hours').value)||0;
+  const rate=parseFloat(document.getElementById('wh-rate').value)||0;
+  if(!hours||!rate){showToast('Podaj godziny i stawkę');return;}
+  saveWorkHours(key,hours,rate);
+  showToast('Zapisano ✓ dodano do przychodów');
+  pop();setTimeout(()=>renderWorkHours(),50);
+}
+function delWorkHoursForm(key){
+  showConfirm('Usunąć wpis godzin? Powiązany przychód również zniknie.',()=>{
+    deleteWorkHours(key);
+    showToast('Usunięto');
+    pop();setTimeout(()=>renderWorkHours(),50);
+  },{title:'Usuń wpis',confirmLabel:'Usuń',danger:true});
 }
 
 function renderSettings(){
