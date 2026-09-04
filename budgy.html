@@ -40,8 +40,7 @@ button{cursor:pointer;border:none;background:none}
 .nb-title{font-size:17px;font-weight:600;color:var(--text);
   flex:1;text-align:center;padding:0 8px}
 .nb-large{font-size:34px;font-weight:700;color:var(--text);padding:4px 16px 12px;
-  display:flex;justify-content:center;align-items:center;
-  will-change:transform,opacity;transform-origin:center center}
+  display:flex;justify-content:center;align-items:center}
 /* ── LOGO "SELF-WRITING" INTRO — letters draw in one after another ── */
 @keyframes logoDraw{to{stroke-dashoffset:0}}
 @keyframes logoFillIn{
@@ -69,7 +68,7 @@ button{cursor:pointer;border:none;background:none}
 #sc{flex:1;overflow-y:auto;overflow-x:hidden;-webkit-overflow-scrolling:touch;
   scrollbar-width:none;background:var(--bg)}
 #sc::-webkit-scrollbar{display:none}
-.sp{padding:12px 0 calc(var(--sab) + 40px);will-change:transform}
+.sp{padding:12px 0 calc(var(--sab) + 40px)}
 .sIn{animation:sIn .28s cubic-bezier(.22,1,.36,1) both}
 .sBk{animation:sBk .28s cubic-bezier(.22,1,.36,1) both}
 @keyframes sIn{from{transform:translateX(100%);opacity:.7}to{transform:none;opacity:1}}
@@ -290,9 +289,9 @@ select{cursor:pointer}
 .empty-icon{font-size:64px}
 .empty-title{font-size:20px;font-weight:700;color:var(--text)}
 .empty-sub{font-size:14px;color:var(--text3);line-height:1.6;max-width:260px}
-.big-btn{background:var(--blue);color:#fff;border-radius:14px;
+.big-btn{background:var(--orange);color:#fff;border-radius:14px;
   padding:15px 32px;font-size:17px;font-weight:600;
-  box-shadow:0 6px 20px rgba(0,122,255,.35);transition:all .15s}
+  box-shadow:0 6px 20px rgba(255, 136, 0, 0.35);transition:all .15s}
 .big-btn:active{transform:scale(.97);opacity:.9}
 .big-btn-green{background:var(--green);box-shadow:0 6px 20px rgba(52,199,89,.4)}
 .big-btn-purple{background:var(--purple);box-shadow:0 6px 20px rgba(175,82,222,.4)}
@@ -1080,7 +1079,7 @@ function renderMonths(){
   const whSub=whCur?`${whCur.hours}h · ${fmtMoneyAbs(whCur.hours*whCur.rate)}`:'Dodaj godziny';
   const qtilesHtml=`<div class="qtiles">
       <div class="qtile" onclick="push('year-summary',{})">
-        <div class="qtile-ic" style="background:rgba(0,122,255,.12);color:var(--blue)">${icon('chart',18)}</div>
+        <div class="qtile-ic" style="background:rgba(0,122,255,.12);color:var(--orange)">${icon('chart',18)}</div>
         <div class="qtile-lbl">Ten rok</div>
         <div class="qtile-sub">Podsumowanie ${new Date().getFullYear()}</div>
       </div>
@@ -1095,7 +1094,7 @@ function renderMonths(){
         <div class="qtile-sub">${fmtDate(today)}</div>
       </div>
       <div class="qtile" onclick="push('work-hours',{})">
-        <div class="qtile-ic" style="background:rgba(255,149,0,.12);color:var(--orange)">${icon('wallet',18)}</div>
+        <div class="qtile-ic" style="background:rgba(175,82,222,.12);color:var(--purple)">${icon('wallet',18)}</div>
         <div class="qtile-lbl">Godziny pracy</div>
         <div class="qtile-sub">${whSub}</div>
       </div>
@@ -2071,10 +2070,10 @@ function renderWorkHours(){
     <div style="display:flex;justify-content:space-between;align-items:center">
       <div>
         <div class="sav-title">Ten miesiąc</div>
-        <div class="sav-actual" style="margin-top:4px;color:var(--orange)">${curWh?fmtMoneyAbs(curWh.hours*curWh.rate):'Brak wpisu'}</div>
+        <div class="sav-actual" style="margin-top:4px">${curWh?fmtMoneyAbs(curWh.hours*curWh.rate):'Brak wpisu'}</div>
         ${curWh?`<div class="sav-sub" style="margin:2px 0 0">${curWh.hours}h × ${fmtMoneyAbs(curWh.rate)}/h</div>`:''}
       </div>
-      <div class="sav-add-btn" style="background:var(--orange)" onclick="push('work-hours-form',{key:'${curKey}'})" title="Edytuj">${icon('plus',16)}</div>
+      <div class="sav-add-btn" onclick="push('work-hours-form',{key:'${curKey}'})" title="Edytuj">${icon('plus',16)}</div>
     </div>
   </div>`;
   if(keys.length){
@@ -2083,13 +2082,13 @@ function renderWorkHours(){
       const wh=monthWorkHours(k);
       html+=`<div class="row tap" onclick="push('work-hours-form',{key:'${k}'})">
         <div class="rm"><div class="rt">${monthLabel(k)}</div><div class="rmeta">${wh.hours}h × ${fmtMoneyAbs(wh.rate)}/h</div></div>
-        <span style="font-size:16px;font-weight:700;color:var(--orange)">${fmtMoneyAbs(wh.hours*wh.rate)}</span>
+        <span style="font-size:16px;font-weight:700;color:var(--green)">${fmtMoneyAbs(wh.hours*wh.rate)}</span>
       </div>`;
     });
     html+='</div>';
   }
   html+=`<div style="padding:12px 16px 0">
-    <button class="big-btn" style="width:100%;background:var(--orange)" onclick="showWorkHoursMonthPicker()">+ Dodaj godziny za inny miesiąc</button>
+    <button class="big-btn" style="width:100%" onclick="showWorkHoursMonthPicker()">+ Dodaj godziny za inny miesiąc</button>
   </div>`;
   html+='</div>';
   document.getElementById('sc').innerHTML=html;
@@ -2136,7 +2135,7 @@ function renderWorkHoursForm({key}){
     <p class="sh">Podgląd</p>
     <div class="card">
       <div class="row"><div class="rm"><div class="rt">Przychód do dodania</div><div class="rmeta">Godziny × stawka</div></div>
-        <span id="wh-preview" style="font-size:18px;font-weight:800;color:var(--orange)">${wh?fmtMoneyAbs(wh.hours*wh.rate):fmtMoneyAbs(0)}</span></div>
+        <span id="wh-preview" style="font-size:18px;font-weight:800;color:var(--green)">${wh?fmtMoneyAbs(wh.hours*wh.rate):fmtMoneyAbs(0)}</span></div>
     </div>
     <p class="sh">Kwota zostanie automatycznie dodana jako przychód „Godziny pracy” w tym miesiącu i zaktualizuje się przy każdej zmianie.</p>
     ${wh?`<div class="card"><div class="del-row row tap" onclick="delWorkHoursForm('${key}')">${ICO_TRASH} Usuń wpis godzin</div></div>`:''}
@@ -2419,29 +2418,25 @@ const ICO_WALLET=icon('wallet',40);
 
 /* ══ BRAND LOGO — simple white wordmark ══ */
 const LOGO_FONT=`font-family="-apple-system,BlinkMacSystemFont,'SF Pro Rounded','Segoe UI',Roboto,sans-serif" font-size="32" font-weight="800" letter-spacing="-1"`;
-const LOGO_TEXT='Budgy';
-const LOGO_LETTER_STAGGER=0.15; // seconds between each letter's draw start
 
-/* Static-but-scrubbable: each letter is its own tspan so scroll can drive
-   fill-opacity / stroke-opacity / stroke-dashoffset directly (write ↔ un-write) */
-const LOGO_TSPANS_SCRUB=LOGO_TEXT.split('').map((ch,i)=>
-  `<tspan data-li="${i}" style="fill:#fff;fill-opacity:1;stroke:#fff;stroke-width:1;stroke-opacity:0;stroke-dasharray:60;stroke-dashoffset:0">${ch}</tspan>`
-).join('');
+/* Static: shown after the intro has already played once */
 const LOGO_SVG_STATIC=`<svg width="150" height="46" viewBox="0 0 150 46" xmlns="http://www.w3.org/2000/svg" style="display:block">
   <defs>
     <filter id="lgShadowS" x="-40%" y="-40%" width="180%" height="180%">
       <feDropShadow dx="0" dy="1" stdDeviation="2" flood-color="#000" flood-opacity="0.18"/>
     </filter>
   </defs>
-  <text id="logoScrubText" x="75" y="32" text-anchor="middle" filter="url(#lgShadowS)" ${LOGO_FONT}>${LOGO_TSPANS_SCRUB}</text>
+  <text x="75" y="32" text-anchor="middle" filter="url(#lgShadowS)" ${LOGO_FONT} fill="#fff">Budgy</text>
 </svg>`;
 
 /* Animated: the wordmark "writes itself" on launch — each letter draws its
    outline in turn, then fills solid white, cascading left to right */
+const LOGO_TEXT='Budgy';
+const LOGO_LETTER_STAGGER=0.15; // seconds between each letter's draw start
 const LOGO_TSPANS=LOGO_TEXT.split('').map((ch,i)=>{
   const drawDelay=(i*LOGO_LETTER_STAGGER).toFixed(2);
   const fillDelay=(i*LOGO_LETTER_STAGGER+0.3).toFixed(2);
-  return `<tspan class="logo-letter" data-li="${i}" style="animation-delay:${drawDelay}s,${fillDelay}s">${ch}</tspan>`;
+  return `<tspan class="logo-letter" style="animation-delay:${drawDelay}s,${fillDelay}s">${ch}</tspan>`;
 }).join('');
 const LOGO_SVG_ANIMATED=`<svg width="150" height="46" viewBox="0 0 150 46" xmlns="http://www.w3.org/2000/svg" style="display:block">
   <defs>
@@ -2471,104 +2466,6 @@ function budgyGlowLogo(scale=1){
 ['gesturestart','gesturechange','gestureend'].forEach(ev=>{
   document.addEventListener(ev,e=>e.preventDefault());
 });
-
-/* Logo Budgy — animacja napędzana WYŁĄCZNIE przesuwaniem palcem W DÓŁ
-   (przesunięcie do góry NIGDY nie cofa efektu — licznik pikseli jest
-   jednokierunkowy/kumulatywny). Sekwencja w dwóch etapach, litera po literze,
-   tą samą techniką stroke/fill co logo startowe:
-   1) wypełnienie liter znika po kolei (Budgy → stają się puste)
-   2) każda litera odrysowuje swój kontur po kolei (zostaje sam widoczny kontur)
-   Ekran da się „odciągnąć” w dół palcem ZAWSZE — nawet gdy nie ma czego
-   scrollować — i wraca sprężyście na miejsce po puszczeniu palca. */
-(function initLogoPullAnimation(){
-  const scEl=document.getElementById('sc');
-  const nbEl=document.getElementById('nb');
-  if(!scEl)return;
-  let dragging=false,startX=0,startY=0,lastY=0;
-  let progressPx=0; /* kumulatywne, jednokierunkowe przesunięcie w dół */
-  const HALF_RANGE=140; /* px potrzebne na każdy z dwóch etapów */
-  const MAX_PULL=90;    /* max wizualne odciągnięcie ekranu (opór rubber-band) */
-
-  function contentEl(){return scEl.querySelector('.sp');}
-
-  function updateLogo(){
-    const textEl=nbEl.querySelector('#logoScrubText, #logoWriteText');
-    if(!textEl){
-      nbEl.style.backdropFilter='';
-      nbEl.style.webkitBackdropFilter='';
-      return;
-    }
-    const T=Math.max(0,Math.min(2,progressPx/HALF_RANGE)); /* 0-1: znika wypełnienie; 1-2: rysuje się kontur */
-    const letters=textEl.querySelectorAll('tspan');
-    const n=letters.length;
-    letters.forEach((el,i)=>{
-      const start=i/n,end=(i+1)/n;
-      let fillOpacity,strokeOpacity,dashoffset;
-      if(T<=1){
-        const lp=Math.max(0,Math.min(1,(T-start)/(end-start)));
-        fillOpacity=1-lp;strokeOpacity=0;dashoffset=60;
-      } else {
-        const lp=Math.max(0,Math.min(1,((T-1)-start)/(end-start)));
-        fillOpacity=0;strokeOpacity=1;dashoffset=60*(1-lp);
-      }
-      el.style.fillOpacity=fillOpacity;
-      el.style.strokeOpacity=strokeOpacity;
-      el.style.strokeDashoffset=dashoffset;
-    });
-    const blur=20-(T/2)*8;
-    nbEl.style.backdropFilter=`blur(${blur}px)`;
-    nbEl.style.webkitBackdropFilter=`blur(${blur}px)`;
-  }
-
-  scEl.addEventListener('touchstart',e=>{
-    if(e.touches.length!==1)return;
-    if(scEl.scrollTop>0)return; /* odciąganie liczy się tylko od samej góry */
-    startX=e.touches[0].clientX;
-    startY=lastY=e.touches[0].clientY;
-    dragging=true;
-    const c=contentEl();
-    if(c)c.style.transition='none';
-  },{passive:true});
-
-  scEl.addEventListener('touchmove',e=>{
-    if(!dragging)return;
-    const x=e.touches[0].clientX,y=e.touches[0].clientY;
-    const totalDx=x-startX,totalDy=y-startY;
-    if(Math.abs(totalDx)>Math.abs(totalDy)){
-      /* gest bardziej poziomy (np. swipe-to-delete wiersza) — nie ingerujemy */
-      dragging=false;
-      const c=contentEl();
-      if(c){c.style.transition='';c.style.transform='';}
-      return;
-    }
-    if(totalDy<=0){
-      /* cofnięto z powrotem do/ponad punkt startu — nic nie odciągamy */
-      const c=contentEl();
-      if(c)c.style.transform='';
-      lastY=y;
-      return;
-    }
-    const stepDy=y-lastY;
-    lastY=y;
-    if(stepDy>0){progressPx+=stepDy;updateLogo();} /* liczy się tylko przyrost w dół */
-    const pulled=Math.min(MAX_PULL,Math.pow(totalDy,0.72)); /* opór rubber-band */
-    const c=contentEl();
-    if(c)c.style.transform=`translateY(${pulled}px)`;
-    e.preventDefault();
-  },{passive:false});
-
-  function release(){
-    if(!dragging)return;
-    dragging=false;
-    const c=contentEl();
-    if(c){
-      c.style.transition='transform .42s cubic-bezier(.34,1.56,.64,1)';
-      c.style.transform='';
-    }
-  }
-  scEl.addEventListener('touchend',release,{passive:true});
-  scEl.addEventListener('touchcancel',release,{passive:true});
-})();
 
 /* ══ INIT ══ */
 load();
