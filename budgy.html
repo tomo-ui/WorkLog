@@ -26,7 +26,7 @@ button{cursor:pointer;border:none;background:none}
   --sat:env(safe-area-inset-top,0px);--sab:env(safe-area-inset-bottom,0px);
 }
 @media(prefers-color-scheme:dark){:root{
-  --bg:#1C1C1E;--card:#2C2C2E;--text:#FFF;--text2:rgba(235,235,245,.6);s
+  --bg:#1C1C1E;--card:#2C2C2E;--text:#FFF;--text2:rgba(235,235,245,.6);
   --text3:#636366;--sep:rgba(84,84,88,.65);--g5:#3A3A3C;--g6:#1C1C1E;
   --nav:rgba(28,28,30,.94);--sh:0 2px 16px rgba(0,0,0,.4);
 }}
@@ -69,7 +69,7 @@ button{cursor:pointer;border:none;background:none}
 #sc{flex:1;overflow-y:auto;overflow-x:hidden;-webkit-overflow-scrolling:touch;
   scrollbar-width:none;background:var(--bg)}
 #sc::-webkit-scrollbar{display:none}
-.sp{padding:12px 0 calc(var(--sab) + 40px)}
+.sp{padding:12px 0 calc(var(--sab) + 40px);will-change:transform}
 .sIn{animation:sIn .28s cubic-bezier(.22,1,.36,1) both}
 .sBk{animation:sBk .28s cubic-bezier(.22,1,.36,1) both}
 @keyframes sIn{from{transform:translateX(100%);opacity:.7}to{transform:none;opacity:1}}
@@ -2472,63 +2472,102 @@ function budgyGlowLogo(scale=1){
   document.addEventListener(ev,e=>e.preventDefault());
 });
 
-/* Logo Budgy "pisze się" i "odpisuje" DOKŁADNIE tą samą animacją co przy
-   starcie aplikacji (najpierw kontur-stroke, potem wypełnienie — i odwrotnie),
-   tyle że sterowaną 1:1 pozycją scrolla zamiast czasem (jak w Threads).
-   Używamy Web Animations API i tych samych klatek co @keyframes logoDraw/logoFillIn,
-   przewijanych przez currentTime — więc przebieg jest identyczny w obie strony. */
-(function initLogoScrollParallax(){
+/* Logo Budgy — animacja napędzana WYŁĄCZNIE przesuwaniem palcem W DÓŁ
+   (przesunięcie do góry NIGDY nie cofa efektu — licznik pikseli jest
+   jednokierunkowy/kumulatywny). Sekwencja w dwóch etapach, litera po literze,
+   tą samą techniką stroke/fill co logo startowe:
+   1) wypełnienie liter znika po kolei (Budgy → stają się puste)
+   2) każda litera odrysowuje swój kontur po kolei (zostaje sam widoczny kontur)
+   Ekran da się „odciągnąć” w dół palcem ZAWSZE — nawet gdy nie ma czego
+   scrollować — i wraca sprężyście na miejsce po puszczeniu palca. */
+(function initLogoPullAnimation(){
   const scEl=document.getElementById('sc');
   const nbEl=document.getElementById('nb');
   if(!scEl)return;
-  let ticking=false;
-  const RANGE=170;      /* px przewinięcia potrzebne do pełnego wymazania */
-  const DRAW_MS=420;    /* = czas trwania logoDraw w CSS */
-  const FILL_MS=400;    /* = czas trwania logoFillIn w CSS */
-  const FILL_OFFSET=300;/* = animation-delay fillIn względem draw (0.3s) w CSS */
-  const LETTER_SPAN=DRAW_MS>FILL_OFFSET+FILL_MS?DRAW_MS:FILL_OFFSET+FILL_MS;
-  function apply(){
-    ticking=false;
+  let dragging=false,startX=0,startY=0,lastY=0;
+  let progressPx=0; /* kumulatywne, jednokierunkowe przesunięcie w dół */
+  const HALF_RANGE=140; /* px potrzebne na każdy z dwóch etapów */
+  const MAX_PULL=90;    /* max wizualne odciągnięcie ekranu (opór rubber-band) */
+
+  function contentEl(){return scEl.querySelector('.sp');}
+
+  function updateLogo(){
     const textEl=nbEl.querySelector('#logoScrubText, #logoWriteText');
     if(!textEl){
       nbEl.style.backdropFilter='';
       nbEl.style.webkitBackdropFilter='';
       return;
     }
-    const st=scEl.scrollTop||0;
-    /* up: 0 = w pełni napisane (spoczynek), 1 = w pełni wymazane */
-    const up=Math.max(0,Math.min(1,st/RANGE));
+    const T=Math.max(0,Math.min(2,progressPx/HALF_RANGE)); /* 0-1: znika wypełnienie; 1-2: rysuje się kontur */
     const letters=textEl.querySelectorAll('tspan');
     const n=letters.length;
-    letters.forEach((el,li)=>{
-      const rank=n-1-li; /* ostatnia litera znika (i pisze się z powrotem) pierwsza */
-      const start=rank/n,end=(rank+1)/n;
-      const lp=Math.max(0,Math.min(1,(up-start)/(end-start))); /* 0=napisana,1=wymazana w oknie tej litery */
-      const w=1-lp; /* 0=wymazana,1=napisana — ta sama oś czasu co animacja startowa */
-      const localMs=w*LETTER_SPAN;
-      if(!el._draw){
-        el._draw=el.animate(
-          [{strokeDashoffset:60},{strokeDashoffset:0}],
-          {duration:DRAW_MS,easing:'cubic-bezier(.65,0,.35,1)',fill:'both'}
-        );
-        el._fill=el.animate(
-          [{fillOpacity:0,strokeOpacity:1,offset:0},
-           {fillOpacity:1,strokeOpacity:1,offset:0.55},
-           {fillOpacity:1,strokeOpacity:0,offset:1}],
-          {duration:FILL_MS,easing:'ease',fill:'both'}
-        );
-        el._draw.pause();el._fill.pause();
+    letters.forEach((el,i)=>{
+      const start=i/n,end=(i+1)/n;
+      let fillOpacity,strokeOpacity,dashoffset;
+      if(T<=1){
+        const lp=Math.max(0,Math.min(1,(T-start)/(end-start)));
+        fillOpacity=1-lp;strokeOpacity=0;dashoffset=60;
+      } else {
+        const lp=Math.max(0,Math.min(1,((T-1)-start)/(end-start)));
+        fillOpacity=0;strokeOpacity=1;dashoffset=60*(1-lp);
       }
-      el._draw.currentTime=Math.max(0,Math.min(DRAW_MS,localMs));
-      el._fill.currentTime=Math.max(0,Math.min(FILL_MS,localMs-FILL_OFFSET));
+      el.style.fillOpacity=fillOpacity;
+      el.style.strokeOpacity=strokeOpacity;
+      el.style.strokeDashoffset=dashoffset;
     });
-    const blur=20-up*8;
+    const blur=20-(T/2)*8;
     nbEl.style.backdropFilter=`blur(${blur}px)`;
     nbEl.style.webkitBackdropFilter=`blur(${blur}px)`;
   }
-  scEl.addEventListener('scroll',()=>{
-    if(!ticking){ticking=true;requestAnimationFrame(apply);}
+
+  scEl.addEventListener('touchstart',e=>{
+    if(e.touches.length!==1)return;
+    if(scEl.scrollTop>0)return; /* odciąganie liczy się tylko od samej góry */
+    startX=e.touches[0].clientX;
+    startY=lastY=e.touches[0].clientY;
+    dragging=true;
+    const c=contentEl();
+    if(c)c.style.transition='none';
   },{passive:true});
+
+  scEl.addEventListener('touchmove',e=>{
+    if(!dragging)return;
+    const x=e.touches[0].clientX,y=e.touches[0].clientY;
+    const totalDx=x-startX,totalDy=y-startY;
+    if(Math.abs(totalDx)>Math.abs(totalDy)){
+      /* gest bardziej poziomy (np. swipe-to-delete wiersza) — nie ingerujemy */
+      dragging=false;
+      const c=contentEl();
+      if(c){c.style.transition='';c.style.transform='';}
+      return;
+    }
+    if(totalDy<=0){
+      /* cofnięto z powrotem do/ponad punkt startu — nic nie odciągamy */
+      const c=contentEl();
+      if(c)c.style.transform='';
+      lastY=y;
+      return;
+    }
+    const stepDy=y-lastY;
+    lastY=y;
+    if(stepDy>0){progressPx+=stepDy;updateLogo();} /* liczy się tylko przyrost w dół */
+    const pulled=Math.min(MAX_PULL,Math.pow(totalDy,0.72)); /* opór rubber-band */
+    const c=contentEl();
+    if(c)c.style.transform=`translateY(${pulled}px)`;
+    e.preventDefault();
+  },{passive:false});
+
+  function release(){
+    if(!dragging)return;
+    dragging=false;
+    const c=contentEl();
+    if(c){
+      c.style.transition='transform .42s cubic-bezier(.34,1.56,.64,1)';
+      c.style.transform='';
+    }
+  }
+  scEl.addEventListener('touchend',release,{passive:true});
+  scEl.addEventListener('touchcancel',release,{passive:true});
 })();
 
 /* ══ INIT ══ */
